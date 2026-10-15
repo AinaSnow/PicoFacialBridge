@@ -11,7 +11,7 @@ The app does not require root, Magisk, Shizuku or PICO Connect, does not occupy 
 
 **[Download APK](https://github.com/WolalaQAQ/PicoFacialBridge/releases) · [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) · [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) · [Report an issue](https://github.com/WolalaQAQ/PicoFacialBridge/issues)**
 
-> Version 0.3.1 uses the BridgeSplit protocol, so the PC must run UnifiedPicoModule. The earlier PicoFacialDataModule and its forks cannot receive data from this version. If you still need the old protocol, use [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0).
+> Version 0.4.0 uses the BridgeSplit protocol, so the PC must run [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule). The earlier PicoFacialDataModule and its forks cannot receive data from this version. If you still need the old protocol, use [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0).
 
 ## Features
 
@@ -19,16 +19,12 @@ The app does not require root, Magisk, Shizuku or PICO Connect, does not occupy 
 - Eye and face data are sent independently at their own source rates, with no smoothing or interpolation.
 - Eye and face transmission can be switched separately, and the interface shows the actual send rate of each channel.
 - Only the channels the PC has subscribed to are sent, and no tracking data is sent before the subscription is acknowledged.
-- The tracking mode is detected automatically and displayed. A stock headset without the enhancement module runs in normal mode and forwards fused gaze and per-eye openness. When the enhancement module is active, enhanced mode additionally forwards per-eye gaze and pupil diameter.
+- The tracking mode (normal or enhanced) is detected automatically and shown in the app.
 - The interface is available in English and Chinese, and the language and transmission settings are saved.
 
-## Normal and enhanced mode
+## Enhanced mode
 
-Without any additional component on the headset, the bridge can only forward the fused gaze and the per-eye openness the firmware itself provides. This is normal mode.
-
-On a rooted (Magisk) headset, installing [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) makes the headset output true per-eye gaze and pupil diameter instead. The bridge detects the change automatically and switches to enhanced mode. No extra PC-side configuration is needed for this feature.
-
-PicoET-Enhance works at runtime, modifies no system file and changes no device-wide property, but it currently supports only PICO OS 5.13.7. See that project's README for installation, mode switching and removal.
+On a headset with the [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk module active, the bridge detects enhanced mode on its own and forwards real pupil diameter and independent per-eye expressions to the PC; everything else in this README works the same without root or the module. What the module does, how to install it and the required versions (PicoET-Enhance 2.2.0 or later with UnifiedPicoModule 0.3.0 or later) are described in the PicoET-Enhance README.
 
 ## Compatibility
 
@@ -52,7 +48,7 @@ As of 2026-10-02, the following have been verified on a PICO 4 Pro:
 - avatar expression tracking in enhanced mode;
 - running alongside Virtual Desktop.
 
-Recovery after a full headset reboot, long-term stability and avatar behavior in normal mode have not yet been verified.
+After a full headset reboot, starting the bridge and reconnecting the PC delivered eye and face data again. Not yet verified: long live-camera sessions and avatar behavior in normal mode.
 
 ## Installation and use
 
@@ -62,7 +58,7 @@ Recovery after a full headset reboot, long-term stability and avatar behavior in
 2. Sideload it with your usual headset APK installer. Alternatively, enable developer mode and USB debugging on the headset, connect and authorize it, then install with [Android platform-tools](https://developer.android.com/tools/releases/platform-tools):
 
    ```sh
-   adb install -r PicoFacialBridge-v0.3.1-arm64-v8a-debug.apk
+   adb install -r PicoFacialBridge-v0.4.0-arm64-v8a-debug.apk
    ```
 
 3. Open PicoFacialBridge from the headset's 2D app list. Make sure eye and face tracking are enabled in the system settings, tap Start, and grant both tracking permissions the app requests.
@@ -176,15 +172,13 @@ See the [changelog](CHANGELOG.md) for version history and the [release guide](do
 
 ### Protocol
 
-The app and UnifiedPicoModule communicate with the BridgeSplit protocol over UDP port 9030, with discovery via the multicast address 239.255.255.250. Eye data and face data are sent as separate tagged datagrams at their own source rates, carrying only the subscribed channels and the fields the receiver actually reads. The eye stream at about 90 Hz no longer re-sends the face frame at about 23 Hz.
-
-In normal mode, the app removes the per-eye markers that the vendor firmware derives from a fixed depth, so the receiver uses fused gaze. These markers are kept only when the enhancement module actually computes independent per-eye gaze.
+The app and UnifiedPicoModule communicate with the BridgeSplit protocol over UDP port 9030, with discovery via the multicast address 239.255.255.250. Eye data and face data are sent as separate datagrams at their own source rates, carrying only the subscribed channels.
 
 For the full description of packet formats, control messages and the connection flow, see the UnifiedPicoModule [protocol reference](https://github.com/WolalaQAQ/UnifiedPicoModule/blob/main/docs/protocol.md). When the protocol changes, this app and UnifiedPicoModule must be updated together.
 
 ### Contributing
 
-Issues and pull requests are welcome. Changes should keep the protocol compatible and preserve each channel's original send cadence, and should update both READMEs and the interface translations. Do not commit keys, local SDK paths, `reference/`, `evidence/`, raw biometric samples, or development plans, research and test records. By default, `docs/` tracks only the two public release guides.
+Issues and pull requests are welcome. Changes should keep the protocol compatible and preserve each channel's original send cadence, and should update both READMEs and the interface translations. Do not commit keys, local SDK paths, raw biometric samples or personal research and test records.
 
 CI runs host tests, translation checks, Android lint and APK builds. When a GitHub Release is published, CI uploads the debug-signed user APK, checksums and license notices automatically, with no custom Secrets required.
 

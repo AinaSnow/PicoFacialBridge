@@ -2,6 +2,21 @@
 
 English | [简体中文](CHANGELOG_zh.md)
 
+## [0.4.0] - 2026-10-15
+
+### Features
+- Forward independent eye expressions as BridgeSplit `X` v1: 111-byte eye-only packets and 243-byte dual-channel packets carry the standard shapes plus an independent right inner brow and per-eye quality states, bound to one epoch and timestamp.
+- Count both-channel `X` packets toward Face Hz; eye-only subscriptions still report zero Face Hz.
+- A non-finite right inner brow marks only the right eye unusable and is sent as a finite placeholder, so the rest of the frame stays usable.
+
+### Design Rationale
+- The facial source publishes an explicit `EPI1` marker and version, so the extension is enabled only for a matching source and only when eye is subscribed. Ordinary packets and face-only transmission stay unchanged.
+
+### Notes & Caveats
+- Requires a receiver with `X` support (UnifiedPicoModule v0.3.0 or later); its `X` path selects expression-derived gaze and eyelids and keeps each eye's own validity. Older receivers reject `X`. Enhanced per-eye expressions need PicoET-Enhance 2.2.0 or later on the headset; normal mode still works with older companions.
+- Validated with PicoET-Enhance 2.2.0, UnifiedPicoModule 0.3.0 and official VRCFT 5.4.5: image replay through native eye inference, the per-eye publisher and shared memory reached the PC with `E` and `X` values matching their sources. The replay used about 23.7 Hz recorded images in an accelerated loop, so it verifies inference throughput and transport, not an original 90 Hz camera sequence.
+- The existing host checks, translation check and debug build pass, but they do not cover the new `X` behavior. Single-eye quality failure, reference recovery and malformed extensions remain unverified.
+
 ## [0.3.1] - 2026-10-03
 
 ### Fixed

@@ -4,9 +4,10 @@
 
 Thank you to **thoricelli** for the original projects that made this bridge possible.
 PicoFacialBridge was developed with reference to their Binder service calls,
-shared-memory data layouts and UDP protocol, and preserves compatibility with
-their VRCFaceTracking receiver. It is an independent Android APK implementation,
-not an official PICO product or an upstream-endorsed release.
+shared-memory data layouts and UDP protocol. It is an independent Android APK
+implementation with its own BridgeSplit protocol, received on the PC by
+UnifiedPicoModule rather than the original VRCFaceTracking module. It is not an
+official PICO product or an upstream-endorsed release.
 
 Referenced source snapshots:
 - [PicoFacialDataDaemon](https://github.com/thoricelli/PicoFacialDataDaemon/tree/ab309182169834dd8180058248a333f2993af3ea) — `ab309182169834dd8180058248a333f2993af3ea`
@@ -17,8 +18,10 @@ notice is reproduced below and is also included inside distributed bridge APKs.
 No proprietary PICO libraries or upstream module DLLs are bundled in the APK.
 
 感谢 **thoricelli** 的原项目。本项目参考了上述项目的 Binder 调用、共享内存
-数据布局和 UDP 协议，并保持与原 VRCFaceTracking 模块兼容。以下保留原作者
-的 MIT 版权和许可声明；本项目并非 PICO 官方产品，也不代表上游官方发布。
+数据布局和 UDP 协议。本项目是独立实现的 Android 应用，使用自己的
+BridgeSplit 协议，PC 端由 UnifiedPicoModule 接收，不与原 VRCFaceTracking
+模块互通。以下保留原作者的 MIT 版权和许可声明；本项目并非 PICO 官方产品，
+也不代表上游官方发布。
 
 ### Upstream license
 

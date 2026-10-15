@@ -257,7 +257,9 @@ public final class BridgeService extends Service {
                             sendingLedger.add(payload);BridgeState.packets++;
                             BridgeState.rates.sent(SystemClock.elapsedRealtimeNanos(),
                                     payload[0] == TrackingData.EYE_TAG ? TrackingData.eyeTimestamp(forwardingPump.eye()) : 0,
-                                    payload[0] == TrackingData.FACE_TAG ? TrackingData.faceTimestamp(forwardingPump.face()) : 0);
+                                     (payload[0] == TrackingData.FACE_TAG ||
+                                      payload[0] == TrackingData.INDEPENDENT_TAG && (payload[1] & 2) != 0)
+                                             ? TrackingData.faceTimestamp(forwardingPump.face()) : 0);
                         }
                     }
                 });

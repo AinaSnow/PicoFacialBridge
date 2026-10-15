@@ -20,16 +20,19 @@ import java.nio.ByteOrder;
  *   'A' 95 bytes  19 eye morphology shapes, eye-only subscription
  *   'F' 151 bytes 33 non-eye shapes, face-only subscription
  *   'F' 227 bytes all 52 shapes, both channels subscribed
+ *   'X' 111/243 bytes eye-only/both shapes plus independent-eye extension v1
  * </pre>
  *
  * <p>Dropped on purpose: the vendor's 3D gaze points, position guides, foveated slots, the
- * always-zero blendshape slots 52..71 and the viseme/emotion fields.
+ * unused blendshape slots 52..71 and the viseme/emotion fields. An EPI1 marker in the
+ * facial prefix enables X packets carrying right inner brow and per-eye quality states.
  */
 public final class TrackingData {
     /** Datagram tags; none collides with the ASCII control datagrams or the {@code MARCO\0} ping. */
     static final byte EYE_TAG = 'E';
     static final byte FACE_TAG = 'F';
     static final byte AUX_TAG = 'A';
+    static final byte INDEPENDENT_TAG = 'X';
     static final int HEADER_SIZE = 19;
     static final int EYE_PACKET_SIZE = 83;
 
@@ -42,6 +45,8 @@ public final class TrackingData {
     // Only the consumed state bits: combined gaze, openness, per-eye gaze vector, pupil.
     private static final int EYE_STATUS_BITS = 0x906;
     private static final int FACE_SHAPE_COUNT = 52;
+    private static final int INDEPENDENT_MAGIC = 0x31495045, INDEPENDENT_VERSION = 1;
+    private static final int INDEPENDENT_EXTENSION_SIZE = 16;
     // Stable eye morphology order: ascending PICO shape identifiers (19 float32 fields).
     static final int[] EYE_SHAPES = {0, 2, 3, 4, 11, 12, 16, 26, 28, 30, 31, 35, 36, 38, 41, 44, 45, 46, 47};
     // Complement of EYE_SHAPES: face-only never serializes disabled eye morphology.
@@ -90,15 +95,28 @@ public final class TrackingData {
         if (mask < 1 || mask > 3) throw new IllegalArgumentException("Unsupported channel mask");
         int[] shapes = mask == 1 ? EYE_SHAPES : mask == 2 ? FACE_ONLY_SHAPES : null;
         int count = shapes == null ? FACE_SHAPE_COUNT : shapes.length;
-        byte[] packet = new byte[HEADER_SIZE + count * 4];
-        ByteBuffer src = bytes(face), dst = bytes(packet);
+        ByteBuffer src = bytes(face);
+        boolean independent = (mask & 1) != 0 && src.getInt(228) == INDEPENDENT_MAGIC
+                && src.getInt(232) == INDEPENDENT_VERSION;
+        int extension = HEADER_SIZE + count * 4;
+        byte[] packet = new byte[extension + (independent ? INDEPENDENT_EXTENSION_SIZE : 0)];
+        ByteBuffer dst = bytes(packet);
         int valid = ((src.getFloat(296) == 1f ? 1 : 0) | (src.getFloat(300) == 1f ? 2 : 0)) & mask;
-        header(dst, mask == 1 ? AUX_TAG : FACE_TAG, mask, valid, epoch, src.getLong(0));
+        header(dst, independent ? INDEPENDENT_TAG : mask == 1 ? AUX_TAG : FACE_TAG, mask, valid, epoch, src.getLong(0));
         for (int i = 0; i < count; i++) {
             float value = src.getFloat(8 + (shapes == null ? i : shapes[i]) * 4);
             // No per-shape presence bits: zero a single non-finite sentinel instead of
             // invalidating the whole eye/face group, so one bad slot cannot blank the frame.
             dst.putFloat(HEADER_SIZE + i * 4, Float.isFinite(value) ? value : 0f);
+        }
+        if (independent) {
+            float rightInner = src.getFloat(216);
+            boolean rightFinite = Float.isFinite(rightInner);
+            dst.putInt(extension, INDEPENDENT_VERSION);
+            dst.putFloat(extension + 4, rightFinite ? rightInner : 0f);
+            dst.putInt(extension + 8, src.getInt(220));
+            dst.putInt(extension + 12, rightFinite ? src.getInt(224) : 0);
+            if (!rightFinite && src.getInt(220) == 0) dst.put(HEADER_VALID, (byte) (valid & ~1));
         }
         return packet;
     }

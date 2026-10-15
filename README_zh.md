@@ -11,7 +11,7 @@ PicoFacialBridge 是运行在 PICO 4 Pro 上的 Android 应用，用于将头显
 
 **[下载 APK](https://github.com/WolalaQAQ/PicoFacialBridge/releases) · [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) · [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) · [反馈问题](https://github.com/WolalaQAQ/PicoFacialBridge/issues)**
 
-> 0.3.1 使用 BridgeSplit 协议，PC 端必须使用 UnifiedPicoModule。旧版 PicoFacialDataModule 及其分支无法接收该版本的数据。仍需使用旧协议时，可使用 [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0)。
+> 0.4.0 使用 BridgeSplit 协议，PC 端须运行 [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule)。旧版 PicoFacialDataModule 及其分支无法接收该版本的数据；仍需使用旧协议时，可使用 [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0)。
 
 ## 功能
 
@@ -19,16 +19,12 @@ PicoFacialBridge 是运行在 PICO 4 Pro 上的 Android 应用，用于将头显
 - 眼动与面部数据按各自的源频率独立发送，不做平滑或插值。
 - 眼动与面部传输可分别开关，界面显示各通道的实际发送频率。
 - 只发送 PC 端订阅的通道，订阅确认前不发送任何追踪数据。
-- 自动检测并显示追踪模式。未安装增强模块的普通头显为普通模式，转发融合视线与逐眼睁眼度；增强模块生效时为增强模式，额外转发逐眼视线与瞳孔直径。
+- 自动检测追踪模式（普通或增强）并在应用内显示。
 - 界面支持中文与英文，语言与传输设置会被保存。
 
-## 普通模式与增强模式
+## 增强模式
 
-头显没有安装额外组件时，Bridge 只能转发融合视线，以及固件本身就提供的逐眼睁眼度，这是普通模式。
-
-在已 Root（Magisk）的头显上安装 [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) 后，头显会改为输出真实的逐眼视线与瞳孔直径，Bridge 会自动检测到这一变化并切换到增强模式，PC 端不需要为本功能做额外配置。
-
-PicoET-Enhance 在运行期生效，不修改系统文件，也不改动整机属性，但目前只支持 PICO OS 5.13.7 固件。安装、模式切换与卸载方法见该项目的 README。
+头显上启用 [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk 模块后，Bridge 会自动识别增强模式，并向 PC 转发真实瞳孔直径和逐眼独立表情；本文其余功能不依赖 Root 或该模块。模块的作用、安装方法和所需版本（PicoET-Enhance 2.2.0 及以上，配合 UnifiedPicoModule 0.3.0 及以上）请见 PicoET-Enhance 的 README。
 
 ## 兼容性
 
@@ -52,7 +48,7 @@ PicoET-Enhance 在运行期生效，不修改系统文件，也不改动整机�
 - 增强模式下 Avatar 的表情跟随；
 - 与 Virtual Desktop 同时运行。
 
-尚未验证的内容包括头显整机重启后的恢复、长时间运行的稳定性，以及普通模式下的 Avatar 表现。
+头显完整重启后，启动 Bridge 并让 PC 重新连接，眼动与面部数据恢复到达。尚未验证的内容包括长时间实机相机使用，以及普通模式下的 Avatar 表现。
 
 ## 安装与使用
 
@@ -62,7 +58,7 @@ PicoET-Enhance 在运行期生效，不修改系统文件，也不改动整机�
 2. 使用常用的头显 APK 安装工具侧载。也可以在头显上启用开发者模式与 USB 调试，连接并授权后，使用 [Android platform-tools](https://developer.android.com/tools/releases/platform-tools) 安装：
 
    ```sh
-   adb install -r PicoFacialBridge-v0.3.1-arm64-v8a-debug.apk
+   adb install -r PicoFacialBridge-v0.4.0-arm64-v8a-debug.apk
    ```
 
 3. 在头显的 2D 应用列表中打开 PicoFacialBridge。确认系统设置中已启用眼动与面部追踪，点击启动，并授予应用请求的两项追踪权限。
@@ -71,7 +67,7 @@ PicoET-Enhance 在运行期生效，不修改系统文件，也不改动整机�
 
 ### 2. 安装 UnifiedPicoModule
 
-按照 [UnifiedPicoModule 的安装说明](https://github.com/WolalaQAQ/UnifiedPicoModule#安装)在 VRCFT 中安装模块。安装前请停用其他 PICO 模块，避免端口冲突。
+按照 [UnifiedPicoModule 的安装说明](https://github.com/WolalaQAQ/UnifiedPicoModule/blob/main/README_zh.md#安装)在 VRCFT 中安装模块。安装前请停用其他 PICO 模块，避免端口冲突。
 
 模块默认通过局域网多播自动发现头显。自动发现失败，或局域网内有多台头显时，可以在模块配置文件 `UnifiedPicoModule.json` 中指定头显地址：
 
@@ -176,15 +172,13 @@ PICO 追踪服务 → Binder / 只读共享内存
 
 ### 协议
 
-本应用与 UnifiedPicoModule 之间使用 BridgeSplit 协议，基于 UDP 9030 端口，并通过多播地址 239.255.255.250 进行发现。眼动数据与面部数据分别作为带标签的数据报，按各自的源频率发送，只携带已订阅的通道与接收端实际读取的字段。约 90 Hz 的眼动流不再重复携带约 23 Hz 的面部帧。
-
-普通模式下，应用会去除厂商固件中基于固定深度推算的逐眼标记，接收端因此使用融合视线；增强模块确实计算出独立逐眼视线时，才保留这些标记。
+本应用与 UnifiedPicoModule 之间使用 BridgeSplit 协议，基于 UDP 9030 端口，并通过多播地址 239.255.255.250 进行发现。眼动数据与面部数据分别作为数据报，按各自的源频率发送，只携带已订阅的通道。
 
 包格式、控制报文与连接流程的完整说明请参阅 UnifiedPicoModule 的[协议参考](https://github.com/WolalaQAQ/UnifiedPicoModule/blob/main/docs/protocol_zh.md)。协议变更时，本应用与 UnifiedPicoModule 需要同时更新。
 
 ### 参与贡献
 
-欢迎提交 Issue 与 Pull Request。修改时请保持协议兼容与各通道的原始发送节奏，并同步更新两份 README 与界面翻译。请勿提交密钥、本机 SDK 路径、`reference/`、`evidence/`、原始生物特征样本，或开发过程中的计划、研究与测试记录。`docs/` 目录默认只跟踪两份公开的发布指南。
+欢迎提交 Issue 与 Pull Request。修改时请保持协议兼容与各通道的原始发送节奏，并同步更新两份 README 与界面翻译。请勿提交密钥、本机 SDK 路径、原始生物特征样本，或个人的研究与测试记录。
 
 CI 会执行主机测试、翻译检查、Android lint 与 APK 构建。发布 GitHub Release 后，CI 会自动上传 debug 签名的用户 APK、校验和与许可声明，无需配置自定义 Secrets。
 
