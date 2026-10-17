@@ -7,9 +7,8 @@ import java.nio.ByteOrder;
  * Verified PICO OS 5.13.7 source fields, plus the BridgeSplit wire protocol.
  *
  * <p>The upstream daemon/module pair used one fixed 536-byte datagram: a 384-byte facial prefix
- * followed by a 152-byte eye prefix. Because the two streams run at very different rates (the eye
- * service updates at roughly 90 Hz, the facial model at roughly 23 Hz), that framing re-sent the
- * unchanged half on every update of the other half. BridgeSplit does not keep it: each datagram
+ * followed by a 152-byte eye prefix. Because the source streams can run at different rates, that
+ * framing re-sent the unchanged half on every update of the other half. BridgeSplit does not keep it: each datagram
  * carries only the fields the receiver consumes for the channels it subscribed to.
  *
  * <p>Every datagram starts with a 19-byte little-endian header: tag, channel mask (eye=1, face=2),
@@ -21,6 +20,7 @@ import java.nio.ByteOrder;
  *   'F' 151 bytes 33 non-eye shapes, face-only subscription
  *   'F' 227 bytes all 52 shapes, both channels subscribed
  *   'X' 111/243 bytes eye-only/both shapes plus independent-eye extension v1
+ *   'X' 131/263 bytes extension v2 adds L/R/mouth updates and two source times
  * </pre>
  *
  * <p>Dropped on purpose: the vendor's 3D gaze points, position guides, foveated slots, the
@@ -45,7 +45,7 @@ public final class TrackingData {
     // Only the consumed state bits: combined gaze, openness, per-eye gaze vector, pupil.
     private static final int EYE_STATUS_BITS = 0x906;
     private static final int FACE_SHAPE_COUNT = 52;
-    private static final int INDEPENDENT_MAGIC = 0x31495045, INDEPENDENT_VERSION = 1;
+    private static final int INDEPENDENT_MAGIC = 0x31495045;
     private static final int INDEPENDENT_EXTENSION_SIZE = 16;
     // Stable eye morphology order: ascending PICO shape identifiers (19 float32 fields).
     static final int[] EYE_SHAPES = {0, 2, 3, 4, 11, 12, 16, 26, 28, 30, 31, 35, 36, 38, 41, 44, 45, 46, 47};
@@ -89,6 +89,17 @@ public final class TrackingData {
         return packet;
     }
 
+    /** Runtime forwarding filters each group's update bit against its own source clock. */
+    static byte[] facePacket(byte[] face, int mask, long epoch, long now) {
+        if (!faceFresh(face, now, mask)) return null;
+        byte[] packet = facePacket(face, mask, epoch);
+        if (independentVersion(face) == 2 && (mask & 1) != 0) {
+            int count = mask == 1 ? EYE_SHAPES.length : FACE_SHAPE_COUNT;
+            bytes(packet).putInt(HEADER_SIZE + count * 4 + 16, freshGroups(face, now, mask));
+        }
+        return packet;
+    }
+
     /** Directly serializes only the subscribed morphology from a >=384-byte vendor facial prefix. */
     static byte[] facePacket(byte[] face, int mask, long epoch) {
         if (face == null || face.length < 384) throw new IllegalArgumentException("Facial prefix too short");
@@ -96,13 +107,14 @@ public final class TrackingData {
         int[] shapes = mask == 1 ? EYE_SHAPES : mask == 2 ? FACE_ONLY_SHAPES : null;
         int count = shapes == null ? FACE_SHAPE_COUNT : shapes.length;
         ByteBuffer src = bytes(face);
-        boolean independent = (mask & 1) != 0 && src.getInt(228) == INDEPENDENT_MAGIC
-                && src.getInt(232) == INDEPENDENT_VERSION;
+        int version = independentVersion(face);
+        boolean independent = (mask & 1) != 0 && version != 0;
         int extension = HEADER_SIZE + count * 4;
-        byte[] packet = new byte[extension + (independent ? INDEPENDENT_EXTENSION_SIZE : 0)];
+        byte[] packet = new byte[extension + (independent ? INDEPENDENT_EXTENSION_SIZE + (version == 2 ? 20 : 0) : 0)];
         ByteBuffer dst = bytes(packet);
         int valid = ((src.getFloat(296) == 1f ? 1 : 0) | (src.getFloat(300) == 1f ? 2 : 0)) & mask;
-        header(dst, independent ? INDEPENDENT_TAG : mask == 1 ? AUX_TAG : FACE_TAG, mask, valid, epoch, src.getLong(0));
+        header(dst, independent ? INDEPENDENT_TAG : mask == 1 ? AUX_TAG : FACE_TAG, mask, valid, epoch,
+                version == 2 && mask == 2 ? src.getLong(240) : src.getLong(0));
         for (int i = 0; i < count; i++) {
             float value = src.getFloat(8 + (shapes == null ? i : shapes[i]) * 4);
             // No per-shape presence bits: zero a single non-finite sentinel instead of
@@ -112,11 +124,17 @@ public final class TrackingData {
         if (independent) {
             float rightInner = src.getFloat(216);
             boolean rightFinite = Float.isFinite(rightInner);
-            dst.putInt(extension, INDEPENDENT_VERSION);
+            dst.putInt(extension, version);
             dst.putFloat(extension + 4, rightFinite ? rightInner : 0f);
             dst.putInt(extension + 8, src.getInt(220));
             dst.putInt(extension + 12, rightFinite ? src.getInt(224) : 0);
             if (!rightFinite && src.getInt(220) == 0) dst.put(HEADER_VALID, (byte) (valid & ~1));
+            if (version == 2) {
+                // EPI1: left source remains at 0; updates L/R/mouth at 236, mouth/right at 240/248.
+                dst.putInt(extension + 16, src.getInt(236) & (mask == 1 ? 3 : 7));
+                dst.putLong(extension + 20, src.getLong(240));
+                dst.putLong(extension + 28, src.getLong(248));
+            }
         }
         return packet;
     }
@@ -135,6 +153,21 @@ public final class TrackingData {
     static ByteBuffer bytes(byte[] data) { return ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN); }
     public static long eyeTimestamp(byte[] eye) { return bytes(eye).getLong(168); }
     public static long faceTimestamp(byte[] face) { return bytes(face).getLong(0); }
+    static long packetTimestamp(byte[] packet) { return bytes(packet).getLong(HEADER_TIMESTAMP); }
+    static long facePacketTimestamp(byte[] packet) {
+        if ((packet[1] & 2) == 0) return 0;
+        if (packet[0] == FACE_TAG) return packetTimestamp(packet);
+        if (packet[0] != INDEPENDENT_TAG) return 0;
+        ByteBuffer src = bytes(packet);
+        int extension = HEADER_SIZE + FACE_SHAPE_COUNT * 4;
+        if (src.getInt(extension) != 2) return packetTimestamp(packet);
+        return (src.getInt(extension + 16) & 4) != 0 ? src.getLong(extension + 20) : 0;
+    }
+    static int independentVersion(byte[] face) {
+        ByteBuffer src = bytes(face);
+        int version = src.getInt(232);
+        return src.getInt(228) == INDEPENDENT_MAGIC && (version == 1 || version == 2) ? version : 0;
+    }
     public static float combinedGazeX(byte[] eye) { return bytes(eye).getFloat(72); }
     public static boolean eyeValid(byte[] eye) {
         if (eye == null || eye.length < 200) return false;
@@ -156,7 +189,20 @@ public final class TrackingData {
         return eye != null && eye.length >= 200 && fresh(now, eyeTimestamp(eye));
     }
     static boolean faceFresh(byte[] face, long now) {
-        return face != null && face.length >= 384 && fresh(now, faceTimestamp(face));
+        return faceFresh(face, now, 3);
+    }
+    static boolean faceFresh(byte[] face, long now, int mask) {
+        if (face == null || face.length < 384) return false;
+        if (independentVersion(face) != 2) return fresh(now, faceTimestamp(face));
+        return freshGroups(face, now, mask) != 0;
+    }
+    private static int freshGroups(byte[] face, long now, int mask) {
+        ByteBuffer src = bytes(face);
+        int updated = src.getInt(236) & (mask == 1 ? 3 : mask == 2 ? 4 : 7);
+        if (!fresh(now, src.getLong(0))) updated &= ~1;
+        if (!fresh(now, src.getLong(248))) updated &= ~2;
+        if (!fresh(now, src.getLong(240))) updated &= ~4;
+        return updated;
     }
     static boolean forwardable(byte[] face, byte[] eye, long now, boolean sendEye, boolean sendFace) {
         return (sendEye && eyeFresh(eye, now)) || (sendFace && faceFresh(face, now));

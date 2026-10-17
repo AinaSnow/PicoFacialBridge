@@ -121,6 +121,7 @@ public final class BridgeService extends Service {
         TrackingSession session = new TrackingSession(BridgeState::log);
         MulticastSocket socket = null;
         DeliveryLedger ledger = null;
+        final XDeliveryStats xDelivery = new XDeliveryStats();
         boolean active = false, captureWanted = true;
         try {
             wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PicoFacialBridge:tracking");
@@ -205,7 +206,10 @@ public final class BridgeService extends Service {
                 // Publication now follows a verified service restart. A reconnect may beat that
                 // publication, so refresh even while a session is active (or capture is paused).
                 if (now >= nextModeCheck) {
-                    if (refreshMode()) nextAdvert = 0;
+                    if (refreshMode()) {
+                        nextAdvert = 0; pump = new FramePump(); BridgeState.rates.reset();
+                        lastEyeFresh = lastMorphologyFresh = SystemClock.elapsedRealtime();
+                    }
                     nextModeCheck = SystemClock.elapsedRealtime() + 1000;
                 }
                 if (!sessionWanted && active) { session.close(); active = false; pump = new FramePump(); BridgeState.rates.reset(); }
@@ -214,7 +218,7 @@ public final class BridgeService extends Service {
                 long lastRequiredFresh = captureEye ? Math.min(lastEyeFresh, lastMorphologyFresh) : lastMorphologyFresh;
                 if (StreamHealth.reconnectDue(active, session.isAlive(), now, lastRequiredFresh)) {
                     BridgeState.log("RECONNECT stale or dead tracking session");
-                    session.close(); active = false; nextStart = now + 1000;
+                    session.close(); active = false; pump = new FramePump(); nextStart = now + 1000;
                 }
                 if (sessionWanted && !active && now >= nextStart) {
                     if (refreshMode()) nextAdvert = 0;
@@ -236,7 +240,6 @@ public final class BridgeService extends Service {
                 final MulticastSocket sendingSocket=socket;
                 final InetSocketAddress destination=endpoint;
                 final DeliveryLedger sendingLedger=ledger;
-                final FramePump forwardingPump = pump;
                 pump.keepPerEyeGaze = BridgeState.mode.keepPerEyeGaze();
                 pump.epoch = peer.epoch();
                 if (endpoint != null && now >= nextAdvert) {
@@ -255,20 +258,19 @@ public final class BridgeService extends Service {
                         if(destination!=null && localSelection == transmitMask && !cancel.get()){
                             sendingSocket.send(new DatagramPacket(payload,payload.length,destination));
                             sendingLedger.add(payload);BridgeState.packets++;
+                            xDelivery.sent(payload, SystemClock.elapsedRealtimeNanos());
                             BridgeState.rates.sent(SystemClock.elapsedRealtimeNanos(),
-                                    payload[0] == TrackingData.EYE_TAG ? TrackingData.eyeTimestamp(forwardingPump.eye()) : 0,
-                                     (payload[0] == TrackingData.FACE_TAG ||
-                                      payload[0] == TrackingData.INDEPENDENT_TAG && (payload[1] & 2) != 0)
-                                             ? TrackingData.faceTimestamp(forwardingPump.face()) : 0);
+                                    payload[0] == TrackingData.EYE_TAG ? TrackingData.packetTimestamp(payload) : 0,
+                                    TrackingData.facePacketTimestamp(payload));
                         }
                     }
                 });
-                byte[] eye = active ? pump.eye() : null, face = active ? pump.face() : null;
+                byte[] eye = active ? pump.eye() : null;
                 long eyeTime = eye == null ? 0 : TrackingData.eyeTimestamp(eye);
-                long faceTime = face == null ? 0 : TrackingData.faceTimestamp(face);
                 BridgeState.eye = TrackingData.eyeValid(eye) && TrackingData.fresh(nano, eyeTime);
-                BridgeState.face = TrackingData.faceValid(face) && TrackingData.fresh(nano, faceTime);
-                boolean eyeFresh = TrackingData.eyeFresh(eye, nano), morphologyFresh = TrackingData.faceFresh(face, nano);
+                BridgeState.face = active && pump.faceValid(nano);
+                boolean eyeFresh = TrackingData.eyeFresh(eye, nano),
+                        morphologyFresh = active && pump.morphologyFresh(nano, captureSelection);
                 if (eyeFresh) lastEyeFresh = nano / 1_000_000L;
                 if (morphologyFresh) lastMorphologyFresh = nano / 1_000_000L;
                 // Overall health requires every needed source; forwarding remains independent.
@@ -286,6 +288,7 @@ public final class BridgeService extends Service {
                             + " localMask=" + localSelection + " requestedMask=" + peer.requestedMask() + " transmitMask=" + selection
                             + " subscribed=" + peer.subscribed() + " eyeTxHz=" + hz[0] + " faceTxHz=" + hz[1]);
                     nextLog = now + 5000;
+                    BridgeState.log(xDelivery.report(SystemClock.elapsedRealtimeNanos()));
                 }
                 SystemClock.sleep(active ? 1 : 10);
             }
