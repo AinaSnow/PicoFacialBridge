@@ -3,13 +3,12 @@ name: Android CI and Release
 on:
   push:
     branches: ['**']
+    tags: ['v*']
   pull_request:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing release tag to build and upload (e.g. v0.3.0); blank = CI only'
+        description: 'Existing tag to build and publish (e.g. v0.5.0); blank = CI only'
         required: false
         type: string
 
@@ -17,11 +16,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-${{ github.event.release.tag_name || inputs.tag || github.event.pull_request.number || github.ref }}
+  group: android-${{ inputs.tag || github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
 
 jobs:
   build:
@@ -110,32 +109,71 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Upload APK to GitHub Release
+    name: Publish GitHub Release
     needs: build
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+          sparse-checkout: |
+            CHANGELOG.md
+            CHANGELOG_zh.md
+          sparse-checkout-cone-mode: false
+
       # Keep the write token out of the build job; upload only its verified artifacts.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: android-build
           path: artifacts/ci
 
-      - name: Upload APK, checksums and licenses to the existing release
+      - name: Create the release from the changelog, or refresh its assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          gh release view "$RELEASE_TAG" --json tagName --jq .tagName
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          # Body of the "## [version]" section, up to the next version heading.
+          section() { awk -v h="## [$version]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' "$1"; }
+          {
+            echo "## What's new"
+            section CHANGELOG.md
+            echo
+            echo "## 更新内容"
+            section CHANGELOG_zh.md
+          } > release-notes.md
+          for file in CHANGELOG.md CHANGELOG_zh.md; do
+            if [[ -z "$(section "$file")" ]]; then
+              echo "::error::$file has no [$version] section"
+              exit 1
+            fi
+          done
+
           mkdir -p artifacts/release
           cp artifacts/ci/PicoFacialBridge-debug.apk \
             "artifacts/release/PicoFacialBridge-${RELEASE_TAG}-arm64-v8a-debug.apk"
           cp artifacts/ci/LICENSE artifacts/ci/THIRD_PARTY_NOTICES.md artifacts/release/
           (cd artifacts/release && sha256sum ./*.apk LICENSE THIRD_PARTY_NOTICES.md > SHA256SUMS.txt)
-          gh release upload "$RELEASE_TAG" \
-            artifacts/release/*.apk artifacts/release/SHA256SUMS.txt \
-            artifacts/release/LICENSE artifacts/release/THIRD_PARTY_NOTICES.md --clobber
+          assets=(artifacts/release/*.apk artifacts/release/SHA256SUMS.txt
+            artifacts/release/LICENSE artifacts/release/THIRD_PARTY_NOTICES.md)
+
+          if gh release view "$RELEASE_TAG" --json tagName > /dev/null 2>&1; then
+            # Rerun for an existing release: replace the assets, keep its notes.
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            options=()
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              options+=(--prerelease)
+            fi
+            # Publish only after the assets are attached.
+            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --draft \
+              --title "PicoFacialBridge $RELEASE_TAG" --notes-file release-notes.md "${options[@]}"
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi

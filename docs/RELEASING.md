@@ -6,9 +6,16 @@ English | [简体中文](RELEASING_zh.md) · [README](../README.md)
 
 ## Publish to GitHub Releases
 
-1. Commit and push the source and [workflow](../.github/workflows/android.yml). For a new app version, update `versionName` and increment `versionCode` in `bridge/build.gradle`.
-2. Create and publish a GitHub Release from that commit. Its tag must match `v` + `versionName`, for example **`v0.5.0`** for the current version. Pre-releases work too, provided the tag matches the APK version: tick **Set as a pre-release** when the build still needs real-headset acceptance.
-3. Wait for **Android CI and Release** to finish. Download from the release's **Assets**:
+1. Commit and push the source and [workflow](../.github/workflows/android.yml). For a new app version, update `versionName` and increment `versionCode` in `bridge/build.gradle`, and add a `## [<version>]` section to both `CHANGELOG.md` and `CHANGELOG_zh.md`.
+2. Push a tag on that commit. The tag must match `v` + `versionName`, for example **`v0.5.0`** for the current version:
+
+   ```powershell
+   git tag -a v0.5.0 -m "PicoFacialBridge v0.5.0"
+   git push origin v0.5.0
+   ```
+
+   A tag with a suffix such as `v0.6.0-rc.1` is published as a pre-release; use one when the build still needs real-headset acceptance.
+3. Wait for **Android CI and Release** to finish. It creates the release, titled `PicoFacialBridge v0.5.0`, with the English and Chinese changelog sections as its notes. Download from the release's **Assets**:
 
    ```text
    PicoFacialBridge-v0.5.0-arm64-v8a-debug.apk
@@ -17,13 +24,13 @@ English | [简体中文](RELEASING_zh.md) · [README](../README.md)
    THIRD_PARTY_NOTICES.md
    ```
 
-The workflow runs host tests, translation checks and Android lint, builds the APK, verifies its automatic signature and uploads it. The filename identifies it as a **debug build**: it is debuggable but can be installed and used normally. No manual signing or Play Console account is involved.
+The workflow runs host tests, translation checks and Android lint, builds the APK, verifies its automatic signature, and only then creates and publishes the release with the files attached. The filename identifies it as a **debug build**: it is debuggable but can be installed and used normally. No manual signing or Play Console account is involved. If the tag does not match `versionName`, or a changelog has no section for the version, the run fails before anything is published.
 
-Uploads use GitHub's built-in `GITHUB_TOKEN`; repository/organization policy must allow Actions and the publish job's `contents: write` permission. Publishing a release, not merely pushing a tag, triggers the upload. The tagged source must include this workflow.
+Uploads use GitHub's built-in `GITHUB_TOKEN`; repository/organization policy must allow Actions and the publish job's `contents: write` permission. The tagged source must include this workflow.
 
-If you need to retry, rerun the failed job or use **Actions → Android CI and Release → Run workflow**, entering the existing release tag. Manual publishing builds that tag, not the selected branch, and replaces same-named assets. An empty tag runs CI only. Manual dispatch must be available on the default branch.
+If you need to retry, rerun the failed job or use **Actions → Android CI and Release → Run workflow**, entering the existing tag. Manual publishing builds that tag, not the selected branch. If the release already exists, it replaces same-named assets and leaves the notes as they are; otherwise it creates the release. An empty tag runs CI only. Manual dispatch must be available on the default branch.
 
-This flow adds assets after publication, so the release must remain mutable. It cannot append files to an immutable/locked release.
+A rerun for an existing release adds assets after publication, so that release must remain mutable. It cannot append files to an immutable/locked release.
 
 ## Updating the app
 
