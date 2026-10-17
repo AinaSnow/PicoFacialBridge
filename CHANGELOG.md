@@ -2,6 +2,25 @@
 
 English | [简体中文](CHANGELOG_zh.md)
 
+## [0.5.0] - 2026-10-17
+
+### Features
+- Forward EPI1 v2 as BridgeSplit `X` v2: 131-byte eye-only and 263-byte dual-channel packets retain independent left-eye, right-eye and mouth update bits and source timestamps. EPI1 v1 and ordinary `E`/`A`/`F` packets remain supported.
+- Drain expression updates when either eye or the mouth advances, and report distinct per-group source rates. Dual-channel Face Hz counts new mouth observations rather than fast eye updates.
+- Log an `X_DELIVERY` line every five seconds with the `X` packets sent, their v1/v2 split and the distinct left-eye, right-eye and mouth observations.
+
+### Fixed
+- Start from a fresh frame pump when the tracking mode changes or a stale session reconnects, so source state from the previous session cannot suppress the first frames of the next one.
+
+### Design Rationale
+- Preserve each group's source identity and per-eye quality state, so a held or unavailable eye cannot suppress another group's forwarding. Held mouth data stays in dual-channel packets without becoming a new mouth observation.
+- Advance source health and cached mouth validity only on that group's new observation; require each subscribed group to remain fresh, including during held or blocked frames. Expired groups lose their outgoing update bits without changing their source timestamps.
+
+### Notes & Caveats
+- `X` v2 requires PicoET-Enhance 2.3.0 or later and UnifiedPicoModule 0.4.0 or later; receivers that support only `X` v1 reject v2 packets. There is no automatic wire-version negotiation.
+- Validated on a PICO 4 Pro with PicoET-Enhance 2.3.0, UnifiedPicoModule 0.4.0 and official VRCFT 5.4.5 during an 84-second worn Virtual Desktop session with Cymple mouth tracking and PICO eye tracking. The Bridge sent about 89.7 `X` packets per second, each carrying a new eye source. Eye-only and combined PICO tracking also ran normally. This was a short session, not a long-duration stability test.
+- Host tests now include `IndependentExpressionTest`, which covers `X` v1/v2 framing, per-group freshness, grouped shared-memory reads and the delivery counters.
+
 ## [0.4.0] - 2026-10-15
 
 ### Features

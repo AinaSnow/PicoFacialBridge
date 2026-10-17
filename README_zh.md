@@ -11,7 +11,7 @@ PicoFacialBridge 是运行在 PICO 4 Pro 上的 Android 应用，用于将头显
 
 **[下载 APK](https://github.com/WolalaQAQ/PicoFacialBridge/releases) · [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) · [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) · [反馈问题](https://github.com/WolalaQAQ/PicoFacialBridge/issues)**
 
-> 0.4.0 使用 BridgeSplit 协议，PC 端须运行 [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule)。旧版 PicoFacialDataModule 及其分支无法接收该版本的数据；仍需使用旧协议时，可使用 [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0)。
+> 0.5.0 使用 BridgeSplit 协议，PC 端须运行 [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule)。旧版 PicoFacialDataModule 及其分支无法接收该版本的数据；仍需使用旧协议时，可使用 [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0)。
 
 ## 功能
 
@@ -24,7 +24,7 @@ PicoFacialBridge 是运行在 PICO 4 Pro 上的 Android 应用，用于将头显
 
 ## 增强模式
 
-头显上启用 [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk 模块后，Bridge 会自动识别增强模式，并向 PC 转发真实瞳孔直径和逐眼独立表情；本文其余功能不依赖 Root 或该模块。模块的作用、安装方法和所需版本（PicoET-Enhance 2.2.0 及以上，配合 UnifiedPicoModule 0.3.0 及以上）请见 PicoET-Enhance 的 README。
+头显上启用 [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk 模块后，Bridge 会自动识别增强模式，并向 PC 转发真实瞳孔直径和逐眼独立表情；本文其余功能不依赖 Root 或该模块。模块的作用、安装方法与所需的 Bridge／UnifiedPicoModule 配套版本请见 PicoET-Enhance 的 README。
 
 ## 兼容性
 
@@ -58,7 +58,7 @@ PicoFacialBridge 是运行在 PICO 4 Pro 上的 Android 应用，用于将头显
 2. 使用常用的头显 APK 安装工具侧载。也可以在头显上启用开发者模式与 USB 调试，连接并授权后，使用 [Android platform-tools](https://developer.android.com/tools/releases/platform-tools) 安装：
 
    ```sh
-   adb install -r PicoFacialBridge-v0.4.0-arm64-v8a-debug.apk
+   adb install -r PicoFacialBridge-v0.5.0-arm64-v8a-debug.apk
    ```
 
 3. 在头显的 2D 应用列表中打开 PicoFacialBridge。确认系统设置中已启用眼动与面部追踪，点击启动，并授予应用请求的两项追踪权限。

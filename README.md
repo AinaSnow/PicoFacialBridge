@@ -11,7 +11,7 @@ The app does not require root, Magisk, Shizuku or PICO Connect, does not occupy 
 
 **[Download APK](https://github.com/WolalaQAQ/PicoFacialBridge/releases) · [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) · [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) · [Report an issue](https://github.com/WolalaQAQ/PicoFacialBridge/issues)**
 
-> Version 0.4.0 uses the BridgeSplit protocol, so the PC must run [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule). The earlier PicoFacialDataModule and its forks cannot receive data from this version. If you still need the old protocol, use [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0).
+> Version 0.5.0 uses the BridgeSplit protocol, so the PC must run [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule). The earlier PicoFacialDataModule and its forks cannot receive data from this version. If you still need the old protocol, use [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0).
 
 ## Features
 
@@ -24,7 +24,7 @@ The app does not require root, Magisk, Shizuku or PICO Connect, does not occupy 
 
 ## Enhanced mode
 
-On a headset with the [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk module active, the bridge detects enhanced mode on its own and forwards real pupil diameter and independent per-eye expressions to the PC; everything else in this README works the same without root or the module. What the module does, how to install it and the required versions (PicoET-Enhance 2.2.0 or later with UnifiedPicoModule 0.3.0 or later) are described in the PicoET-Enhance README.
+On a headset with the [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk module active, the bridge detects enhanced mode on its own and forwards real pupil diameter and independent per-eye expressions to the PC; everything else in this README works the same without root or the module. See the PicoET-Enhance README for its features, installation and matching Bridge/UnifiedPicoModule requirements.
 
 ## Compatibility
 
@@ -58,7 +58,7 @@ After a full headset reboot, starting the bridge and reconnecting the PC deliver
 2. Sideload it with your usual headset APK installer. Alternatively, enable developer mode and USB debugging on the headset, connect and authorize it, then install with [Android platform-tools](https://developer.android.com/tools/releases/platform-tools):
 
    ```sh
-   adb install -r PicoFacialBridge-v0.4.0-arm64-v8a-debug.apk
+   adb install -r PicoFacialBridge-v0.5.0-arm64-v8a-debug.apk
    ```
 
 3. Open PicoFacialBridge from the headset's 2D app list. Make sure eye and face tracking are enabled in the system settings, tap Start, and grant both tracking permissions the app requests.
