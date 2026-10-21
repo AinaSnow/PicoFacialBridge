@@ -41,3 +41,20 @@ were performed by this development task. UDP send success is not receiver confir
 
 BridgeDiagnosticsTest adds 136 counter, elapsed-time rate, throttle, privacy and recovery checks.
 No hardware acceptance or performance measurements were added.
+
+
+## Recovery and eye diagnostics (0.6.0-osc.3)
+
+RecoveryPacingTest adds invalid-but-advancing liveness, real stall/Binder recovery,
+explicit invalid mouth neutralization, independent eye hold behavior, exact expiry,
+60/90 Hz deadline scheduling (also 30/120), overrun skipping and opt-in eye diagnostic privacy/rate tests.
+Deterministic simulated 2 ms work stays within 1 ms over ten seconds at every tested rate.
+The optional Windows host `--measure` run reports actual local scheduling; it is not an Android benchmark.
+This version still needs manual headset/VRChat acceptance. No installation or Unity changes are performed.
+
+Local osc.3 results: 5,784 mapping/OSC, 136 summary diagnostics, 3,568 recovery/pacing/debug,
+and 435 original regression checks passed. Local UDP decode passed outside the restricted sandbox.
+Windows wait-only pacing sample: 60 configured / 59.989 Hz observed and 90 / 89.974 Hz,
+each over approximately 3 seconds. No capture, network workload or headset was included.
+An earlier stress sample using Thread.sleep(2) as work was slower (59.187 / 32.260 Hz);
+that synthetic sleep also depends on Windows timer scheduling, so it is not an Android prediction.

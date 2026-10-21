@@ -69,6 +69,7 @@ final class BridgeDiagnostics {
         return "HEALTH active="+active+" source="+mapper.sourceName()+" nativeEye="+sourceName(e)+" morphology="+sourceName(f)
                 +" cacheL/R/M="+groupName(l)+"/"+groupName(r)+"/"+groupName(m)
                 +" latestGroupUsableL/R/M="+latestUsable[0]+"/"+latestUsable[1]+"/"+latestUsable[2]
+                +" mouthOutput="+((mask&2)==0?"disabled":mapper.latestUsable(2)==0?"neutralInvalid":mapper.mouthFresh(now)?"valid":"neutralNoValid")
                 +" udp="+(udpError?"sendError":"noSendError")+" receiver=unconfirmed transitions="+healthChanges;
     }
     boolean due(long now) { return now - windowStart >= SUMMARY_NS; }

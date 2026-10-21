@@ -60,8 +60,8 @@ jobs:
         run: |
           python3 tests/test_apk_distribution.py
           # Gradle automatically signs debug APKs; no keystore setup is required.
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose \
-            bridge/build/outputs/apk/debug/bridge-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs \
+            bridge/build/outputs/apk/debug/bridge-debug.apk | tee build/apk-signature.txt
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c 4 \
             bridge/build/outputs/apk/debug/bridge-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging \
@@ -78,6 +78,7 @@ jobs:
           cp bridge/build/outputs/apk/androidTest/debug/bridge-debug-androidTest.apk artifacts/ci/PicoFacialBridge-debug-androidTest.apk
           cp LICENSE THIRD_PARTY_NOTICES.md artifacts/ci/
           cp build/apk-badging.txt artifacts/ci/
+          cp build/apk-signature.txt artifacts/ci/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

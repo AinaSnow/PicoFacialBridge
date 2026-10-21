@@ -25,6 +25,7 @@ final class DirectFaceMapper {
     private final float[] raw = new float[52];
     final float[] values = new float[OscFacePacket.KEY_COUNT];
     private final long[] seen = new long[3], validAt = new long[3];
+    private final int[] latestUsable = {-1, -1, -1};
     private float rightInner;
     private int version = -1;
     private final BridgeDiagnostics diagnostics;
@@ -36,6 +37,7 @@ final class DirectFaceMapper {
         if (diagnostics != null) diagnostics.reset();
         Arrays.fill(raw, 0); Arrays.fill(values, 0);
         Arrays.fill(seen, 0); Arrays.fill(validAt, 0);
+        Arrays.fill(latestUsable, -1);
         rightInner = 0; version = -1;
     }
 
@@ -54,7 +56,14 @@ final class DirectFaceMapper {
             seen[group] = time;
             boolean usable = group == 2 ? f32(face, 300) == 1f
                     : v == 0 ? f32(face, 296) == 1f : i32(face, group == 0 ? 220 : 224) != 0;
-            if (!usable) { if (diagnostics != null) diagnostics.invalid(group); continue; }
+            latestUsable[group] = usable ? 1 : 0;
+            if (!usable) {
+                if (diagnostics != null) diagnostics.invalid(group);
+                // A new, explicitly invalid mouth observation is neutral, unlike a missing group.
+                // Keep the independent eyes' last-valid policy unchanged.
+                if (group == 2) for (int slot : MOUTH) raw[slot] = 0;
+                continue;
+            }
             int[] slots = group == 0 ? LEFT : group == 1 ? RIGHT : MOUTH;
             for (int slot : slots) raw[slot] = sourceValue(f32(face, 8 + slot * 4));
             if (group == 1) rightInner = sourceValue(f32(face, v == 0 ? 20 : 216));
@@ -88,7 +97,15 @@ final class DirectFaceMapper {
     }
 
     boolean eyeFresh(long now) { return fresh(now, validAt[0]) || fresh(now, validAt[1]); }
-    boolean mouthFresh(long now) { return fresh(now, validAt[2]); }
+    boolean mouthFresh(long now) { return latestUsable[2] == 1 && fresh(now, validAt[2]); }
+    /** Observation liveness is independent of the vendor's tracking-quality flags. */
+    boolean sourcesFresh(long now, int mask) {
+        return mask != 0 && ((mask & 1) == 0 || (fresh(now, seen[0]) && fresh(now, seen[1])))
+                && ((mask & 2) == 0 || fresh(now, seen[2]));
+    }
+    int latestUsable(int group) { return latestUsable[group]; }
+    long observationAgeMs(int group, long now) { return seen[group] == 0 ? -1 : Math.max(0,(now-seen[group])/1_000_000L); }
+    float usedRaw(int slot) { return raw[slot]; }
     long eyeTime() { return Math.max(validAt[0], validAt[1]); }
     long mouthTime() { return validAt[2]; }
     long validTime(int group) { return validAt[group]; }

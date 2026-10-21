@@ -9,6 +9,8 @@ final class BridgeState {
     static volatile int status = R.string.status_stopped, detail = R.string.detail_initial, clientMessage = R.string.client_none;
     static volatile String error = "", client = "", address = "-";
     static volatile boolean eye, face, udp;
+    // Deliberately not persisted: a new application process starts with values logging off.
+    static volatile boolean eyeDebug;
     static volatile TrackingMode.Info mode = TrackingMode.normal();
     static volatile long packets, eyeFrames, faceFrames;
     static volatile long ringOverruns;

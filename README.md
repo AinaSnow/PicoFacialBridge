@@ -42,26 +42,27 @@ UDP discovery listener or request multicast access. It does not alter PC network
 - Gaze comes from the morphology direction differences; blink comes from morphology.
   EyeWide is multiplied by 2 by default. No other corrective filters are enabled.
 - Enhanced EPI1 v2 left eye, right eye and mouth have independent clocks and cached valid
-  values. An update to one group retains the others. Each group returns to zero after
-  **2 seconds** without a valid sample. Mode/session/restart/selection changes reset caches.
+  values. An update to one group retains the others. A new explicitly invalid mouth observation becomes neutral immediately; a missing group
+  is retained. Eyes keep their last-valid policy. Cached groups expire after **2 seconds**
+  without a valid sample. Mode/session/restart/selection changes reset caches.
 - Pupil dilation/constriction (indices 10..13) stay zero: source pupil millimeters have no
   reliable normalization here. Unsupported expressions stay zero. No pupil support is claimed.
 - The worker reads the original bounded PICO rings once per send interval, coalesces all
   retained observations, and sends the latest full snapshot. No outgoing frame queue or
   catch-up bursts. Mapping and OSC buffers are reused; upstream ring-reader allocations remain.
 - The rate is a maximum target, not a real-time guarantee. Android scheduling and synchronous
-  Binder calls may reduce it. UDP errors back off to one send per second. Diagnostic state
-  logs are limited to once per five seconds except lifecycle/errors.
+  Binder calls may reduce it. UDP errors back off to one send per second. Scheduling waits for the remainder of a monotonic deadline, skipping overdue deadlines
+  instead of catching up. Summaries run every five seconds; health changes are throttled to one per second.
 - Permissions, foreground service, wake lock, enhance detection and dead/stale-session
-  reconnection remain. A final neutral packet on stop/restart is best effort over UDP.
+  reconnection remain. Advancing but invalid source observations do not trigger reconnects. A final neutral packet on stop/restart is best effort over UDP.
 
 ## Compatibility and validation
 
 The acquisition layer is inherited from upstream's PICO OS 5.13.7 / Android 10, arm64-v8a
-implementation, without an OpenXR session. **This fork has not been tested on a headset,
-with VD streaming, or against a running VRChat avatar yet.** Upstream hardware observations
-are not test results for this fork. Throughput, latency, battery impact and long-session
-reliability have not been measured on hardware.
+implementation, without an OpenXR session. **The osc.3 changes have not been installed or tested on a headset yet.** Earlier osc.2
+user-provided on-device logs informed the invalid-frame fixes. Those observations do not
+validate this version or prove VRChat reception. End-to-end latency, battery impact and
+long-session reliability remain unmeasured.
 
 Host tests cover all 52 source slots / 102 wire positions, gaze direction, independent
 clocks, stale/missing/invalid samples, switches/reset, non-finite values, clamp,
@@ -100,4 +101,6 @@ The Binder/JNI code is unchanged. License and mapping credits are included in ea
 
 ## Diagnostics
 
-Version 0.6.0-osc.2 adds 5-second capture/validity/cache/conversion/UDP summaries and throttled state/error logs. View recent logs in the app or use logcat tag `PicoFacialBridge` (native details: `PicoBinderProbe`). No expression values, camera images, automatic upload or log files. See [field definitions and commands](docs/DIAGNOSTICS.md).
+Version 0.6.0-osc.2 adds 5-second capture/validity/cache/conversion/UDP summaries and throttled state/error logs. View recent logs in the app or use logcat tag `PicoFacialBridge` (native details: `PicoBinderProbe`). Default logs contain no expression values. Version 0.6.0-osc.3 adds an explicit, default-off
+Eye direction diagnostics switch (at most 2 samples/s, local logs only). No camera images,
+automatic upload or persistent log files. See [field definitions and commands](docs/DIAGNOSTICS.md).

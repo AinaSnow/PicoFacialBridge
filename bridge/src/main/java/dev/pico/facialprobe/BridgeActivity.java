@@ -67,6 +67,15 @@ public final class BridgeActivity extends Activity {
         text(content, s(R.string.selection_hint), 14, Color.rgb(158, 174, 190));
         logButton = button(content, "", () -> { showingLogs = !showingLogs; render(); });
         text(content, s(R.string.logs_hint), 13, Color.rgb(158, 174, 190));
+        Switch eyeDebug = new Switch(this);
+        eyeDebug.setId(R.id.switch_eye_debug); eyeDebug.setText(s(R.string.eye_debug));
+        eyeDebug.setTextColor(Color.WHITE); eyeDebug.setChecked(BridgeState.eyeDebug);
+        eyeDebug.setOnCheckedChangeListener((view, checked) -> {
+            BridgeState.eyeDebug = checked;
+            BridgeState.log("EYE_DIAGNOSTICS enabled=" + checked + " maxHz=2 localOnly=true");
+        });
+        content.addView(eyeDebug);
+        text(content, s(R.string.eye_debug_hint), 13, Color.rgb(158, 174, 190));
         text(content, s(R.string.usage_hint), 15, Color.rgb(158, 174, 190));
         logs = text(content, "", 13, Color.rgb(154, 190, 171)); logs.setTextIsSelectable(true);
         setContentView(scroll);

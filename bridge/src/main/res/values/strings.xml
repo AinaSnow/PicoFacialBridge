@@ -49,4 +49,6 @@
     <string name="pc_port">UDP port (default 9000)</string>
     <string name="send_hz">OSC send rate (30–120 Hz, default 60)</string>
     <string name="destination_invalid">Enter a valid PC IPv4, port 1–65535 and rate 30–120.</string>
+    <string name="eye_debug">Eye direction diagnostics (max 2/s)</string>
+    <string name="eye_debug_hint">Off by default. Locally logs the 8 used direction source values and encoded eye bytes. Turn off after testing; resets when the app process exits.</string>
 </resources>

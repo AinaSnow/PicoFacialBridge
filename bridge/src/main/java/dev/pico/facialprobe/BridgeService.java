@@ -115,10 +115,11 @@ public final class BridgeService extends Service {
         BridgeDiagnostics diagnostics = new BridgeDiagnostics(SystemClock.elapsedRealtimeNanos());
         DirectFaceMapper mapper = new DirectFaceMapper(diagnostics);
         OscFacePacket osc = new OscFacePacket();
+        EyeLookDiagnostics eyeDiagnostics = new EyeLookDiagnostics();
         DatagramPacket packet = new DatagramPacket(osc.bytes, osc.bytes.length, destination);
         DatagramSocket socket = new DatagramSocket();
         boolean active = false;
-        long interval = 1_000_000_000L / hz;
+        DeadlinePacer pacer = new DeadlinePacer(hz, SystemClock.elapsedRealtimeNanos());
         try {
             wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PicoFacialBridge:tracking");
             wake.acquire();
@@ -156,7 +157,7 @@ public final class BridgeService extends Service {
                 }
                 if (StreamHealth.reconnectDue(active, session.isAlive(), now, lastFresh)) {
                     diagnostics.reconnect();
-                    BridgeState.log("RECONNECT binderAlive=" + session.isAlive() + " requiredFreshAgeMs=" + (now-lastFresh));
+                    BridgeState.log("RECONNECT binderAlive=" + session.isAlive() + " requiredSourceInactiveMs=" + (now-lastFresh));
                     session.close(); active = false; mapper.reset(); nextStart = now + 1000;
                 }
                 if (selection != 0 && !active && now >= nextStart) {
@@ -198,9 +199,10 @@ public final class BridgeService extends Service {
                 }
                 BridgeState.eye = active && mapper.eyeFresh(nano);
                 BridgeState.face = active && mapper.mouthFresh(nano);
-                if (((selection & 1) == 0 || BridgeState.eye) && ((selection & 2) == 0 || BridgeState.face)) lastFresh = nano / 1_000_000L;
+                if (active && mapper.sourcesFresh(nano, selection)) lastFresh = nano / 1_000_000L;
                 if (selection != 0 && nano >= nextSend) {
                     osc.encode(mapper.snapshot(nano, selection));
+                    BridgeState.log(eyeDiagnostics.sample(BridgeState.eyeDebug, nano, mapper, osc.bytes, selection));
                     synchronized (transmissionLock) {
                         if (selection == transmitMask && !cancel.get()) {
                             try {
@@ -215,7 +217,7 @@ public final class BridgeService extends Service {
                         }
                     }
                     // No catch-up bursts or queues after a stalled session/network call.
-                    nextSend = SystemClock.elapsedRealtimeNanos() + (sendError == null ? interval : 1_000_000_000L);
+                    nextSend = sendError == null ? 0 : SystemClock.elapsedRealtimeNanos() + 1_000_000_000L;
                 }
                 boolean live = selection != 0 && ((selection & 1) == 0 || BridgeState.eye) && ((selection & 2) == 0 || BridgeState.face);
                 BridgeState.error = sendError != null ? sendError : startError != null ? startError : "";
@@ -230,7 +232,9 @@ public final class BridgeService extends Service {
                             BridgeState.mode.enhance,BridgeState.ringOverruns));
                 }
                 // One acquisition pass per bounded send interval; no 1 ms socket polling.
-                SystemClock.sleep(selection == 0 ? 100 : Math.max(1, (interval + 999_999L) / 1_000_000L));
+                if (selection == 0) {
+                    SystemClock.sleep(100); pacer.reset(SystemClock.elapsedRealtimeNanos());
+                } else SystemClock.sleep(pacer.finishAndWaitMillis(SystemClock.elapsedRealtimeNanos()));
             }
         } finally {
             // Best-effort neutral on explicit stop/restart, not an acknowledgment guarantee.

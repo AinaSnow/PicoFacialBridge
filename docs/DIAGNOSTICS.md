@@ -76,3 +76,29 @@ Host tests verify actual elapsed-time rates, per-group counters, invalid/missing
 coalescing, reset windows, error counts despite throttling, health recovery and absence of
 expression samples in default summaries. These do not replace hardware validation.
 The APK has not been installed or measured on a headset by this task.
+
+
+## Eye direction check (0.6.0-osc.3)
+
+“眼方向诊断 / Eye direction diagnostics” 默认关闭，仅保存在进程内；开启/关闭无需重启服务。
+最多每 500 ms 一行 `EYE_LOOK`，关闭立即停止数值输出，退出应用进程后重置关闭。
+日志仍只有内存内最近 160 行及 Android logcat 环形缓冲，不写文件、不自动上传。
+
+- `usedRaw[45,11,35,12,44,2,31,0]`：本次映射实际使用的右外/内/上/下、左外/内/上/下源槽。
+  这是采纳后的缓存（非有限值已归零）；无效眼观测可沿用旧有效值，过期或关闭发送后归零。
+  它不是每个原始帧的未处理数据，不含眼睛图像。
+- `blob0to7`：此次完整快照编码的 8 个方向字节，0..255，顺序右外/内/上/下、左外/内/上/下。
+  这是本地构造的数据，不是 VRChat 接收确认。
+- `latestUsableL/R`：最新接受观测的有效性，-1 未观测，0 无效，1 有效。
+- `observationAgeMsL/R` 与 `validAgeMsL/R`：最新观测与最后有效源的年龄，未知为 -1。
+  二者不同可识别“源继续更新但无效、正在保持旧眼状态”。
+
+测试时保持头部不动，先只眨眼，再依次看中间、左、右、上、下、左上、右下，每步约 3 秒。
+同时观察镜中瞳孔相对眼角的位置和用户所指的注视点/射线。斜向应能同时改变水平与垂直方向。
+本版不改变方向符号、增益，也不额外发送旧 eye OSC。是否修复用户的斜视/射线表现仍待上述实测。
+
+osc.3 更新：明确无效的嘴观测立即中性，缺失的新组仍保留；`mouthOutput=neutralInvalid`
+明确标记该状态。`cacheL/R/M` 及 `validAgeMs` 仍描述最后有效样本缓存年龄，不代表无效嘴仍在输出旧值。
+重连依据新鲜源观测是否继续推进，追踪质量无效本身不再触发重连。
+`RECONNECT requiredSourceInactiveMs` 是“所需源最近不再满足新鲜条件”持续时间，不是有效表情年龄。
+发送使用单调时钟剩余 deadline 等待，不提升 PICO morphology 源本身的频率。

@@ -1,4 +1,5 @@
 <resources>
+    <item name="switch_eye_debug" type="id" />
     <item name="switch_eye" type="id" />
     <item name="switch_face" type="id" />
     <item name="eye_rate" type="id" />

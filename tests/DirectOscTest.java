@@ -71,7 +71,7 @@ public final class DirectOscTest {
         raw(mouth,7,1);m.accept(mouth.array(),T+4);eq(m.snapshot(T+4,3)[36],.4f,"duplicate timestamp ignored");
         m.accept(null,T+5);m.accept(new byte[20],T+5);eq(m.snapshot(T+5,3)[36],.4f,"missing frame retained");
         ByteBuffer invalid=frame(2,T+6,7).putInt(220,0).putInt(224,0).putFloat(300,0);
-        m.accept(invalid.array(),T+6);o=m.snapshot(T+6,3);eq(o[9],.9f,"invalid left retained");eq(o[36],.4f,"invalid mouth retained");
+        m.accept(invalid.array(),T+6);o=m.snapshot(T+6,3);eq(o[9],.9f,"invalid left retained");eq(o[36],0,"explicitly invalid mouth neutral immediately");
         m.accept(frame(2,T+100_000_000L,1).array(),T+100_000_000L);
         o=m.snapshot(T+DirectFaceMapper.STALE_NS+4,3);
         eq(o[36],0,"mouth expired independently");eq(o[8],0,"right expired independently");
