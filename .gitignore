@@ -18,6 +18,7 @@ artifacts/
 *.p12
 *.pfx
 *.pem
+*.dpapi
 *.apk
 *.aab
 *.log

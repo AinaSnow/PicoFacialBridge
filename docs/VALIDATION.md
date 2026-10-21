@@ -58,3 +58,12 @@ Windows wait-only pacing sample: 60 configured / 59.989 Hz observed and 90 / 89.
 each over approximately 3 seconds. No capture, network workload or headset was included.
 An earlier stress sample using Thread.sleep(2) as work was slower (59.187 / 32.260 Hz);
 that synthetic sleep also depends on Windows timer scheduling, so it is not an Android prediction.
+
+
+## Stable parallel package (0.6.0-osc.4)
+
+Core behavior is unchanged from osc.3. New package ID dev.pico.facialbridge.osc.direct and
+application label PicoFacialBridge OSC Direct preserve the old package. CI disables both
+debug and release signing, asserts its artifact is unsigned and verifies package/version/label.
+The local signing script rejects missing keys and pins the public signer fingerprint before
+and after signing. Private signing material never enters CI, Git or deliverable attachments.

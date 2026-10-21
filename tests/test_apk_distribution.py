@@ -11,7 +11,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 APK = Path(os.environ.get(
-    "APK_PATH", ROOT / "bridge/build/outputs/apk/debug/bridge-debug.apk"
+    "APK_PATH", ROOT / "bridge/build/outputs/apk/debug/bridge-debug-unsigned.apk"
 ))
 
 
@@ -56,6 +56,18 @@ class ApkDistributionTest(unittest.TestCase):
 
 
 class WorkflowDistributionTest(unittest.TestCase):
+    def test_no_automatic_signing_fallback(self):
+        config = (ROOT / "bridge/build.gradle").read_text()
+        self.assertIn("debug { signingConfig null }", config)
+        self.assertIn("release { signingConfig null }", config)
+        self.assertIn("applicationId 'dev.pico.facialbridge.osc.direct'", config)
+        script = (ROOT / "tools/sign-local.ps1").read_text()
+        self.assertNotIn("-genkeypair", script)
+        self.assertIn("Final APK signer mismatch", script)
+        self.assertIn("Existing key does not match pinned certificate", script)
+        pin = (ROOT / "tools/signing-certificate.sha256").read_text().strip()
+        self.assertRegex(pin, r"^[a-f0-9]{64}$")
+
     def test_sideload_releases_need_no_user_supplied_secrets(self):
         workflow = (ROOT / ".github/workflows/android.yml").read_text(encoding="utf-8")
         self.assertFalse(

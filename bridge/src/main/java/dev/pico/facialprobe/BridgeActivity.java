@@ -41,7 +41,7 @@ public final class BridgeActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(32, 24, 32, 24);
         content.setBackgroundColor(Color.rgb(18, 24, 31)); scroll.addView(content);
-        text(content, "PicoFacialBridge", 30, Color.WHITE);
+        text(content, "PicoFacialBridge OSC Direct", 30, Color.WHITE);
         text(content, s(R.string.tagline), 13, Color.rgb(90, 209, 178));
         modeText = text(content, "", 15, Color.rgb(158, 174, 190)); modeText.setId(R.id.mode);
         LinearLayout languages = new LinearLayout(this); content.addView(languages);

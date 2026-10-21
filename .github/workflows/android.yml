@@ -48,37 +48,43 @@ jobs:
 
       - name: Check English and Chinese resources
         shell: pwsh
-        run: ./tests/check-translations.ps1
+        run: |
+          ./tests/check-translations.ps1
+          ./tests/check-signing-failclosed.ps1
 
       - name: Build and lint the bridge
         run: >-
           bash ./gradlew --no-daemon --stacktrace
-          :bridge:assembleDebug :bridge:assembleDebugAndroidTest :bridge:lintDebug
+          :bridge:assembleDebug :bridge:lintDebug
 
-      - name: Check APK contents, signature and alignment
+      - name: Check unsigned APK contents and alignment
         shell: bash
         run: |
           python3 tests/test_apk_distribution.py
-          # Gradle automatically signs debug APKs; no keystore setup is required.
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs \
-            bridge/build/outputs/apk/debug/bridge-debug.apk | tee build/apk-signature.txt
+          # A deployable identity is never created or used on CI.
+          if "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify bridge/build/outputs/apk/debug/bridge-debug-unsigned.apk >/dev/null 2>&1; then
+            echo "ERROR: CI APK must be unsigned"; exit 1
+          fi
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c 4 \
-            bridge/build/outputs/apk/debug/bridge-debug.apk
+            bridge/build/outputs/apk/debug/bridge-debug-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging \
-            bridge/build/outputs/apk/debug/bridge-debug.apk > build/apk-badging.txt
+            bridge/build/outputs/apk/debug/bridge-debug-unsigned.apk > build/apk-badging.txt
           version=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" build/apk-badging.txt)
           test -n "$version"
+          grep -q "name='dev.pico.facialbridge.osc.direct' versionCode='11' versionName='0.6.0-osc.4'" build/apk-badging.txt
+          grep -q "application-label:'PicoFacialBridge OSC Direct'" build/apk-badging.txt
 
 
       - name: Collect CI artifacts
         shell: bash
         run: |
           mkdir -p artifacts/ci
-          cp bridge/build/outputs/apk/debug/bridge-debug.apk artifacts/ci/PicoFacialBridge-debug.apk
-          cp bridge/build/outputs/apk/androidTest/debug/bridge-debug-androidTest.apk artifacts/ci/PicoFacialBridge-debug-androidTest.apk
+          cp bridge/build/outputs/apk/debug/bridge-debug-unsigned.apk artifacts/ci/PicoFacialBridge-OSC-Direct-unsigned.apk
           cp LICENSE THIRD_PARTY_NOTICES.md artifacts/ci/
           cp build/apk-badging.txt artifacts/ci/
-          cp build/apk-signature.txt artifacts/ci/
+          # Official standalone signing tool from the pinned Android SDK, for local-only signing.
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" artifacts/ci/
+          sha256sum artifacts/ci/apksigner.jar > artifacts/ci/apksigner.sha256
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

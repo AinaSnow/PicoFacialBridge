@@ -76,7 +76,7 @@ public final class BridgeService extends Service {
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, BridgeActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, BridgeService.class).setAction(STOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this, "tracking").setSmallIcon(android.R.drawable.ic_menu_view)
-                .setContentTitle("PicoFacialBridge").setContentText(localized.getString(R.string.notification_active))
+                .setContentTitle("PicoFacialBridge OSC Direct").setContentText(localized.getString(R.string.notification_active))
                 .setOngoing(true).setContentIntent(open).addAction(android.R.drawable.ic_media_pause, localized.getString(R.string.stop), stop).build();
     }
     private void launch() {

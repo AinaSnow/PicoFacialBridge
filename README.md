@@ -15,7 +15,7 @@ Virtual Desktop               → streaming (unchanged)
 ## Use
 
 1. Install the built `PicoFacialBridge-debug.apk` yourself using your usual trusted sideload method.
-   This fork has a separate application ID `dev.pico.facialbridge.osc` and label
+   This fork has a separate application ID `dev.pico.facialbridge.osc.direct` and label
    **PicoFacialBridge OSC**. Stop the original bridge before running this version.
 2. Enable PICO eye and face tracking. Open the app and enter the **IPv4 address of the PC
    running VRChat**, UDP port **9000** (or VRChat's configured OSC input port), and a
@@ -85,11 +85,11 @@ python tests/test_apk_distribution.py
 
 Linux/macOS/Git Bash: `bash tests/run-host-tests.sh` and
 `bash ./gradlew --no-daemon :bridge:assembleDebug :bridge:lintDebug`.
-The user APK is `bridge/build/outputs/apk/debug/bridge-debug.apk`; the androidTest APK is
-only an instrumentation runner, not the app to install. Debug signatures may change
-between CI builds; Android can require uninstall/reinstall and will clear preferences.
+The user APK is `bridge/build/outputs/apk/debug/bridge-debug-unsigned.apk`; the androidTest APK is
+only an instrumentation runner, not the user app. Starting with osc.4, CI output is unsigned
+and must be signed locally with the pinned persistent key before installation.
 
-The fork CI builds and checks the APK, verifies its signature/alignment, and uploads a
+The fork CI builds and checks the unsigned APK, verifies alignment, and uploads a
 short-lived `android-build` artifact. It has no Release publishing job. Local tests
 need loopback UDP access but do not require a headset. Do not install or enable any
 headset debugging/security option merely to run host tests.
@@ -104,3 +104,29 @@ The Binder/JNI code is unchanged. License and mapping credits are included in ea
 Version 0.6.0-osc.2 adds 5-second capture/validity/cache/conversion/UDP summaries and throttled state/error logs. View recent logs in the app or use logcat tag `PicoFacialBridge` (native details: `PicoBinderProbe`). Default logs contain no expression values. Version 0.6.0-osc.3 adds an explicit, default-off
 Eye direction diagnostics switch (at most 2 samples/s, local logs only). No camera images,
 automatic upload or persistent log files. See [field definitions and commands](docs/DIAGNOSTICS.md).
+
+
+## Stable local signing (osc.4)
+
+The parallel app is **PicoFacialBridge OSC Direct**, package `dev.pico.facialbridge.osc.direct`,
+version 0.6.0-osc.4 (11). It does not replace the previous `dev.pico.facialbridge.osc` test app.
+Stop the old bridge manually before using Direct. Preferences and PICO permissions belong to
+each package; enter the PC IP and grant permissions again in the new app.
+
+CI builds an **unsigned** debug APK and includes the official apksigner.jar from Android
+Build Tools 35.0.0 plus its SHA256. Verify that checksum before running the jar. CI has no
+private key or signing password. No cloud signing Secrets or key-upload artifacts are used.
+
+On the user's Windows computer, `tools/sign-local.ps1` signs with the existing project key
+from `%USERPROFILE%/.pico-facialbridge-signing`. Its password is protected with Windows DPAPI.
+The script verifies the key's public certificate against `tools/signing-certificate.sha256`
+before signing, then cryptographically verifies the final APK and checks its signer again.
+A missing key, bad tool checksum or certificate mismatch stops the process; no random-key fallback.
+Supply `-InputApk`, `-OutputApk`, `-ApkSignerJar` and the CI artifact's `-ApkSignerSha256`.
+The script does not create keys or install applications. Never upload the signing directory.
+
+Back up signing material privately and securely. Copying password.dpapi to a different Windows
+account or installation is not a portable password backup: DPAPI is bound to that Windows user.
+Before replacing Windows, arrange an independently encrypted/offline key-and-password backup
+through a user-approved secure process. Do not put private keys/passwords in Git, CI caches,
+Library, logs or chat. Only the public certificate fingerprint is tracked.
