@@ -20,7 +20,7 @@ if ((Test-Path -LiteralPath $out) -or (Test-Path -LiteralPath $pending)) { throw
 $certTemp = Join-Path ([System.IO.Path]::GetTempPath()) ('pico-sign-public-' + [guid]::NewGuid() + '.der')
 $secure = $null
 try {
-    $secure = Get-Content -LiteralPath $passwordFile -Raw | ConvertTo-SecureString
+    $secure = (Get-Content -LiteralPath $passwordFile -Raw).Trim() | ConvertTo-SecureString
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try { $env:PICO_SIGN_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
