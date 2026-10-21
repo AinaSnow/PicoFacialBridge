@@ -39,3 +39,4 @@ __pycache__/
 /docs/*
 !/docs/RELEASING.md
 !/docs/RELEASING_zh.md
+!/docs/VALIDATION.md

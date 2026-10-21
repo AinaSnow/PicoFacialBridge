@@ -12,6 +12,8 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.text.InputType;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -21,6 +23,7 @@ public final class BridgeActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private TextView status, details, logs, eyeRate, faceRate, modeText;
     private Button logButton;
+    private EditText hostInput, portInput, hzInput;
     private SharedPreferences prefs;
     private Context localized;
     private String pending = BridgeService.START;
@@ -46,6 +49,10 @@ public final class BridgeActivity extends Activity {
         button(languages, "中文", () -> setLanguage("zh")).setId(R.id.language_zh);
         button(languages, "English", () -> setLanguage("en")).setId(R.id.language_en);
         languages.findViewById(BridgePreferences.language(this).equals("zh") ? R.id.language_zh : R.id.language_en).setEnabled(false);
+        text(content, s(R.string.destination_hint), 16, Color.WHITE);
+        hostInput = field(content, s(R.string.pc_ip), prefs.getString(BridgePreferences.HOST, ""), false);
+        portInput = field(content, s(R.string.pc_port), Integer.toString(prefs.getInt(BridgePreferences.PORT, 9000)), true);
+        hzInput = field(content, s(R.string.send_hz), Integer.toString(prefs.getInt(BridgePreferences.HZ, 60)), true);
         status = text(content, "", 26, Color.WHITE); status.setId(R.id.status);
         addSwitch(content, R.id.switch_eye, R.string.transmit_eye, BridgePreferences.EYE);
         eyeRate = text(content, "", 22, Color.rgb(90, 209, 178)); eyeRate.setId(R.id.eye_rate);
@@ -83,11 +90,28 @@ public final class BridgeActivity extends Activity {
     private Button button(LinearLayout parent, String value, Runnable action) {
         Button button = new Button(this); button.setText(value); button.setOnClickListener(v -> action.run()); parent.addView(button); return button;
     }
+    private EditText field(LinearLayout parent, String label, String value, boolean number) {
+        text(parent, label, 16, Color.WHITE);
+        EditText input = new EditText(this); input.setTextColor(Color.WHITE); input.setSingleLine(true);
+        input.setInputType(number ? InputType.TYPE_CLASS_NUMBER : InputType.TYPE_CLASS_TEXT);
+        input.setText(value); parent.addView(input); return input;
+    }
     private void permissionsThen(String action) {
-        pending = action;
+        try {
+            String host = hostInput.getText().toString().trim();
+            int port = Integer.parseInt(portInput.getText().toString());
+            int hz = Integer.parseInt(hzInput.getText().toString());
+            OscDestination.validate(host, port, hz);
+            prefs.edit().putString(BridgePreferences.HOST, host).putInt(BridgePreferences.PORT, port)
+                    .putInt(BridgePreferences.HZ, hz).apply();
+        } catch (IllegalArgumentException e) {
+            hostInput.setError(s(R.string.destination_invalid)); return;
+        }
+        // Applying a destination while running restarts the worker on the saved endpoint.
+        pending = BridgeService.RESTART;
         String[] permissions = {"com.picovr.permission.EYE_TRACKING", "com.picovr.permission.FACE_TRACKING"};
         for (String permission : permissions) if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) { requestPermissions(permissions, 1); return; }
-        send(action);
+        send(pending);
     }
     private void send(String action) { startForegroundService(new Intent(this, BridgeService.class).setAction(action)); }
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] granted) {

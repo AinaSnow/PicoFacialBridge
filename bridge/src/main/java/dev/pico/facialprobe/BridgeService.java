@@ -9,30 +9,20 @@ import android.content.Intent;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
-import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 import java.net.DatagramPacket;
-import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.MulticastSocket;
-import java.net.NetworkInterface;
-import java.net.SocketTimeoutException;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Enumeration;
+import java.net.DatagramSocket;
 import java.util.List;
-import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class BridgeService extends Service {
     static final String START = "dev.pico.bridge.START", STOP = "dev.pico.bridge.STOP", RESTART = "dev.pico.bridge.RESTART";
-    /** The mode advert goes out on connect, whenever the detected mode changes, and at least this often as a keep-alive. */
-    private static final long ADVERT_KEEPALIVE_MS = 10000L;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final AtomicBoolean cancel = new AtomicBoolean();
     private boolean wanted, working, destroyed;
@@ -52,7 +42,6 @@ public final class BridgeService extends Service {
         }
     };
     private PowerManager.WakeLock wake;
-    private WifiManager.MulticastLock multicast;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -117,186 +106,111 @@ public final class BridgeService extends Service {
         for (String p : new String[]{"com.picovr.permission.EYE_TRACKING", "com.picovr.permission.FACE_TRACKING"}) {
             if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) throw new SecurityException("Grant permission in app: " + p);
         }
-        BridgeState.log("BEGIN uid=" + android.os.Process.myUid() + " pid=" + android.os.Process.myPid() + " no OpenXR session");
+        String host = prefs.getString(BridgePreferences.HOST, "").trim();
+        int port = prefs.getInt(BridgePreferences.PORT, 9000), hz = prefs.getInt(BridgePreferences.HZ, 60);
+        OscDestination.validate(host, port, hz);
+        InetSocketAddress destination = new InetSocketAddress(InetAddress.getByAddress(OscDestination.address(host)), port);
         TrackingSession session = new TrackingSession(BridgeState::log);
-        MulticastSocket socket = null;
-        DeliveryLedger ledger = null;
-        final XDeliveryStats xDelivery = new XDeliveryStats();
-        boolean active = false, captureWanted = true;
+        DirectFaceMapper mapper = new DirectFaceMapper();
+        OscFacePacket osc = new OscFacePacket();
+        DatagramPacket packet = new DatagramPacket(osc.bytes, osc.bytes.length, destination);
+        DatagramSocket socket = new DatagramSocket();
+        boolean active = false;
+        long interval = 1_000_000_000L / hz;
         try {
             wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PicoFacialBridge:tracking");
             wake.acquire();
-            multicast = ((WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE)).createMulticastLock("PicoFacialBridge:discovery");
-            multicast.setReferenceCounted(false); multicast.acquire();
-            NetworkInterface network = NetworkInterface.getByName("wlan0");
-            if (network == null || !network.isUp()) throw new IllegalStateException("Connect headset to Wi-Fi first");
-            InetAddress own = null;
-            for (Enumeration<InetAddress> it = network.getInetAddresses(); it.hasMoreElements();) {
-                InetAddress candidate = it.nextElement(); if (candidate instanceof Inet4Address) own = candidate;
-            }
-            if (own == null) throw new IllegalStateException("Wi-Fi has no IPv4 address");
-            BridgeState.address = own.getHostAddress() + ":9030";
-            socket = new MulticastSocket(null); socket.setReuseAddress(true); socket.bind(new InetSocketAddress(9030));
-            socket.setSoTimeout(1); socket.setNetworkInterface(network); socket.setTimeToLive(1);
-            socket.joinGroup(new InetSocketAddress("239.255.255.250", 9030), network);
-            BridgeState.udp = true; BridgeState.client = ""; BridgeState.clientMessage = R.string.client_none;
-            BridgeState.packets = BridgeState.eyeFrames = BridgeState.faceFrames = 0;
-            BridgeState.ringOverruns=0;
-            BridgeState.log("UDP listening " + BridgeState.address + " multicast=239.255.255.250 interface=wlan0");
-            PeerProtocol peer = new PeerProtocol();
-            InetSocketAddress endpoint = null;
-            refreshMode();
-            long nextStart = 0, nextLog = 0, nextAdvert = 0, nextModeCheck = 0, reportedOverruns=0;
+            BridgeState.address = host + ":" + port;
+            BridgeState.client = ""; BridgeState.clientMessage = R.string.client_none;
+            BridgeState.udp = true;
+            BridgeState.packets = BridgeState.eyeFrames = BridgeState.faceFrames = BridgeState.ringOverruns = 0;
+            BridgeState.log("BEGIN direct OSC target=" + BridgeState.address + " hz=" + hz + " no OpenXR session");
+            long nextStart = 0, nextLog = 0, nextModeCheck = 0, reportedOverruns = 0, nextSend = 0;
+            long lastFresh = SystemClock.elapsedRealtime();
             int lastSelection = transmitMask;
-            FramePump pump=new FramePump();
-            long lastEyeFresh = SystemClock.elapsedRealtime(), lastMorphologyFresh = lastEyeFresh;
-            String startError = null;
+            String startError = null, sendError = null;
             while (!cancel.get()) {
                 long now = SystemClock.elapsedRealtime();
-                final int localSelection = transmitMask;
-                byte[] inbound = new byte[64]; DatagramPacket request = new DatagramPacket(inbound, inbound.length);
-                try {
-                    socket.receive(request);
-                    InetSocketAddress sender = new InetSocketAddress(request.getAddress(), request.getPort());
-                    boolean hadPeer=peer.connected();
-                    if (peer.receive(sender.toString(), Arrays.copyOf(inbound, request.getLength()), now)) {
-                        if (peer.connected()) {
-                            if (peer.takeDiscovery()) { nextAdvert = 0; pump = new FramePump(); }
-                            if(!hadPeer){ledger=new DeliveryLedger();BridgeState.rates.reset();nextAdvert=0;BridgeState.log("DELIVERY_BEGIN peer="+sender);}
-                            endpoint = sender;
-                            if (!captureWanted) nextStart = 0;
-                            captureWanted = true; BridgeState.client = sender.toString();
-                        } else {
-                            finishLedger(ledger,"STOP");ledger=null;
-                            endpoint = null; captureWanted = false; BridgeState.client = ""; BridgeState.clientMessage = R.string.client_stop; BridgeState.rates.reset();
-                            BridgeState.log("CLIENT_STOP; tracking paused until next discovery");
-                        }
-                    }
-                } catch (SocketTimeoutException expected) { /* poll the tracking rings */ }
-                if (peer.expired(now)) {
-                    finishLedger(ledger,"TIMEOUT");ledger=null;
-                    peer.clear(); endpoint = null; captureWanted = false; BridgeState.client = ""; BridgeState.clientMessage = R.string.client_timeout; BridgeState.rates.reset();
-                    BridgeState.log("CLIENT_TIMEOUT");
+                int selection = transmitMask;
+                if (selection != lastSelection) {
+                    mapper.reset(); BridgeState.rates.reset(); nextSend = 0;
+                    lastSelection = selection; lastFresh = now; nextStart = 0;
+                    // Explicitly clear disabled channels (including both-off) on the receiver.
+                    osc.neutral();
+                    try { socket.send(packet); BridgeState.packets++; sendError = null; }
+                    catch (java.io.IOException e) { sendError = e.toString(); }
                 }
-                if (peer.shouldPing(now) && endpoint != null) {
-                    socket.send(new DatagramPacket(PeerProtocol.PING, PeerProtocol.PING.length, endpoint)); peer.pingSent(now);
-                }
-                // Nothing is transmitted before the PC subscribes; until then capture follows the
-                // local switches so the headset UI still reports tracking health.
-                final int selection = peer.effectiveMask(localSelection);
-                final int captureSelection = peer.subscribed() ? selection : localSelection;
-                final boolean sendEye = (selection & 1) != 0, sendFace = (selection & 2) != 0;
-                final boolean captureEye = (captureSelection & 1) != 0;
-                boolean selectionChanged = peer.updateSelection(localSelection, SystemClock.elapsedRealtimeNanos());
-                if (selectionChanged) {
-                    nextStart = 0; nextAdvert = 0; pump = new FramePump(); BridgeState.rates.reset();
-                    BridgeState.log("SUBSCRIPTION requested=" + peer.requestedMask()
-                            + " local=" + localSelection + " effective=" + selection + " epoch=" + peer.epoch());
-                }
-                if (selectionChanged || captureSelection != lastSelection) {
-                    nextStart = 0; lastSelection = captureSelection;
-                    // Newly required sources get the same grace interval as session startup.
-                    lastEyeFresh = lastMorphologyFresh = SystemClock.elapsedRealtime();
-                }
-                if (peer.takeSubscriptionReply() && endpoint != null) {
-                    byte[] acknowledgement = peer.acknowledgement();
-                    socket.send(new DatagramPacket(acknowledgement, acknowledgement.length, endpoint));
-                }
-                boolean sessionWanted = captureWanted && captureSelection != 0;
-                // Publication now follows a verified service restart. A reconnect may beat that
-                // publication, so refresh even while a session is active (or capture is paused).
                 if (now >= nextModeCheck) {
-                    if (refreshMode()) {
-                        nextAdvert = 0; pump = new FramePump(); BridgeState.rates.reset();
-                        lastEyeFresh = lastMorphologyFresh = SystemClock.elapsedRealtime();
-                    }
-                    nextModeCheck = SystemClock.elapsedRealtime() + 1000;
+                    if (refreshMode()) { mapper.reset(); BridgeState.rates.reset(); lastFresh = now; }
+                    nextModeCheck = now + 1000;
                 }
-                if (!sessionWanted && active) { session.close(); active = false; pump = new FramePump(); BridgeState.rates.reset(); }
-                // Every active selection needs morphology: F for face/both, A for eye-only.
-                // Face-only must not wait for the unused native eye source.
-                long lastRequiredFresh = captureEye ? Math.min(lastEyeFresh, lastMorphologyFresh) : lastMorphologyFresh;
-                if (StreamHealth.reconnectDue(active, session.isAlive(), now, lastRequiredFresh)) {
+                if (selection == 0 && active) { session.close(); active = false; mapper.reset(); }
+                if (StreamHealth.reconnectDue(active, session.isAlive(), now, lastFresh)) {
                     BridgeState.log("RECONNECT stale or dead tracking session");
-                    session.close(); active = false; pump = new FramePump(); nextStart = now + 1000;
+                    session.close(); active = false; mapper.reset(); nextStart = now + 1000;
                 }
-                if (sessionWanted && !active && now >= nextStart) {
-                    if (refreshMode()) nextAdvert = 0;
+                if (selection != 0 && !active && now >= nextStart) {
                     try {
-                        session.open(); active = true; startError = null;
-                        lastEyeFresh = lastMorphologyFresh = SystemClock.elapsedRealtime();
-                        pump=new FramePump(); reportedOverruns=0; BridgeState.rates.reset();
+                        session.open(); active = true; startError = null; lastFresh = SystemClock.elapsedRealtime();
+                        mapper.reset(); reportedOverruns = 0; BridgeState.rates.reset();
+                    } catch (UnsupportedOperationException e) { throw e; }
+                    catch (Exception e) {
+                        session.close(); startError = e.toString(); BridgeState.log("RETRY " + e);
+                        nextStart = SystemClock.elapsedRealtime() + 5000;
                     }
-                    catch (UnsupportedOperationException e) { throw e; }
-                    catch (Exception e) { session.close(); startError = e.toString(); BridgeState.log("RETRY " + e); nextStart = now + 5000; }
-                }
-                List<byte[]> eyes=active?session.readEyes():Collections.emptyList();
-                List<byte[]> faces=active?session.readFaces():Collections.emptyList();
-                BridgeState.eyeFrames+=eyes.size();BridgeState.faceFrames+=faces.size();
-                if(active && session.overruns()>reportedOverruns){
-                    BridgeState.ringOverruns+=session.overruns()-reportedOverruns;reportedOverruns=session.overruns();
-                    BridgeState.log("RING_HISTORY_OVERRUN count="+BridgeState.ringOverruns);
-                }
-                final MulticastSocket sendingSocket=socket;
-                final InetSocketAddress destination=endpoint;
-                final DeliveryLedger sendingLedger=ledger;
-                pump.keepPerEyeGaze = BridgeState.mode.keepPerEyeGaze();
-                pump.epoch = peer.epoch();
-                if (endpoint != null && now >= nextAdvert) {
-                    byte[] advert = TrackingMode.advertise(BridgeState.mode).getBytes(StandardCharsets.US_ASCII);
-                    socket.send(new DatagramPacket(advert, advert.length, endpoint));
-                    if (peer.subscribed()) {
-                        byte[] acknowledgement = peer.acknowledgement();
-                        socket.send(new DatagramPacket(acknowledgement, acknowledgement.length, endpoint));
-                    }
-                    // From the actual send time: this iteration may have blocked in session.open().
-                    nextAdvert = SystemClock.elapsedRealtime() + ADVERT_KEEPALIVE_MS;
                 }
                 long nano = SystemClock.elapsedRealtimeNanos();
-                pump.accept(eyes,faces,nano,sendEye,sendFace,payload -> {
+                if (active) {
+                    // Keep the existing bounded ring reader and Binder/JNI acquisition path.
+                    // Native eye packets provide no normalized pupil or extra avatar channels.
+                    List<byte[]> eyes = session.readEyes(), faces = session.readFaces();
+                    BridgeState.eyeFrames += eyes.size(); BridgeState.faceFrames += faces.size();
+                    for (byte[] face : faces) mapper.accept(face, nano);
+                    if (session.overruns() > reportedOverruns) {
+                        BridgeState.ringOverruns += session.overruns() - reportedOverruns;
+                        reportedOverruns = session.overruns();
+                    }
+                }
+                BridgeState.eye = active && mapper.eyeFresh(nano);
+                BridgeState.face = active && mapper.mouthFresh(nano);
+                if (((selection & 1) == 0 || BridgeState.eye) && ((selection & 2) == 0 || BridgeState.face)) lastFresh = nano / 1_000_000L;
+                if (selection != 0 && nano >= nextSend) {
+                    osc.encode(mapper.snapshot(nano, selection));
                     synchronized (transmissionLock) {
-                        if(destination!=null && localSelection == transmitMask && !cancel.get()){
-                            sendingSocket.send(new DatagramPacket(payload,payload.length,destination));
-                            sendingLedger.add(payload);BridgeState.packets++;
-                            xDelivery.sent(payload, SystemClock.elapsedRealtimeNanos());
-                            BridgeState.rates.sent(SystemClock.elapsedRealtimeNanos(),
-                                    payload[0] == TrackingData.EYE_TAG ? TrackingData.packetTimestamp(payload) : 0,
-                                    TrackingData.facePacketTimestamp(payload));
+                        if (selection == transmitMask && !cancel.get()) {
+                            try {
+                                socket.send(packet); BridgeState.packets++; sendError = null;
+                                BridgeState.rates.sent(nano, (selection & 1) != 0 ? mapper.eyeTime() : 0,
+                                        (selection & 2) != 0 ? mapper.mouthTime() : 0);
+                            } catch (java.io.IOException e) {
+                                String error = e.toString();
+                                if (!error.equals(sendError)) BridgeState.log("UDP_SEND_ERROR " + error);
+                                sendError = error;
+                            }
                         }
                     }
-                });
-                byte[] eye = active ? pump.eye() : null;
-                long eyeTime = eye == null ? 0 : TrackingData.eyeTimestamp(eye);
-                BridgeState.eye = TrackingData.eyeValid(eye) && TrackingData.fresh(nano, eyeTime);
-                BridgeState.face = active && pump.faceValid(nano);
-                boolean eyeFresh = TrackingData.eyeFresh(eye, nano),
-                        morphologyFresh = active && pump.morphologyFresh(nano, captureSelection);
-                if (eyeFresh) lastEyeFresh = nano / 1_000_000L;
-                if (morphologyFresh) lastMorphologyFresh = nano / 1_000_000L;
-                // Overall health requires every needed source; forwarding remains independent.
-                boolean live = sessionWanted && (!captureEye || eyeFresh) && morphologyFresh;
-                BridgeState.error = startError != null && sessionWanted ? startError : "";
-                BridgeState.status = captureSelection == 0 ? R.string.status_paused : live ? R.string.status_running
-                        : startError != null && sessionWanted ? R.string.status_error : R.string.status_starting;
-                int pauseDetail = localSelection == 0 ? R.string.detail_paused : R.string.detail_no_common_channels;
-                BridgeState.detail = captureSelection == 0 ? pauseDetail : startError != null && sessionWanted ? R.string.detail_retry
-                        : live ? R.string.detail_live : captureWanted ? R.string.detail_waiting : R.string.detail_discovery;
-                if (now >= nextLog) {
-                    double[] hz = BridgeState.rates.hz(SystemClock.elapsedRealtimeNanos());
-                    BridgeState.log("STATE " + getResources().getResourceEntryName(BridgeState.status) + " eye=" + BridgeState.eye + " face=" + BridgeState.face
-                            + " frames=" + BridgeState.eyeFrames + "/" + BridgeState.faceFrames + " packets=" + BridgeState.packets + " client=" + BridgeState.client + " ringOverruns="+BridgeState.ringOverruns
-                            + " localMask=" + localSelection + " requestedMask=" + peer.requestedMask() + " transmitMask=" + selection
-                            + " subscribed=" + peer.subscribed() + " eyeTxHz=" + hz[0] + " faceTxHz=" + hz[1]);
-                    nextLog = now + 5000;
-                    BridgeState.log(xDelivery.report(SystemClock.elapsedRealtimeNanos()));
+                    // No catch-up bursts or queues after a stalled session/network call.
+                    nextSend = SystemClock.elapsedRealtimeNanos() + (sendError == null ? interval : 1_000_000_000L);
                 }
-                SystemClock.sleep(active ? 1 : 10);
+                boolean live = selection != 0 && ((selection & 1) == 0 || BridgeState.eye) && ((selection & 2) == 0 || BridgeState.face);
+                BridgeState.error = sendError != null ? sendError : startError != null ? startError : "";
+                BridgeState.status = selection == 0 ? R.string.status_paused : !BridgeState.error.isEmpty() ? R.string.status_error
+                        : live ? R.string.status_running : R.string.status_starting;
+                BridgeState.detail = selection == 0 ? R.string.detail_paused : sendError != null ? R.string.detail_send_error
+                        : startError != null ? R.string.detail_retry : live ? R.string.detail_live : R.string.detail_waiting;
+                if (now >= nextLog) {
+                    BridgeState.log("STATE eye=" + BridgeState.eye + " face=" + BridgeState.face + " packets=" + BridgeState.packets
+                            + " mask=" + selection + " ringOverruns=" + BridgeState.ringOverruns);
+                    nextLog = now + 5000;
+                }
+                // One acquisition pass per bounded send interval; no 1 ms socket polling.
+                SystemClock.sleep(selection == 0 ? 100 : Math.max(1, (interval + 999_999L) / 1_000_000L));
             }
         } finally {
-            finishLedger(ledger,"WORKER_END");
-            session.close();
-            if (socket != null) socket.close();
-            if (multicast != null && multicast.isHeld()) multicast.release();
+            // Best-effort neutral on explicit stop/restart, not an acknowledgment guarantee.
+            osc.neutral();
+            try { socket.send(packet); } catch (java.io.IOException e) { BridgeState.log("NEUTRAL_SEND_FAILED " + e); }
+            session.close(); socket.close();
             if (wake != null && wake.isHeld()) wake.release();
             BridgeState.eye = BridgeState.face = BridgeState.udp = false;
             BridgeState.rates.reset();
@@ -306,7 +220,7 @@ public final class BridgeService extends Service {
     /**
      * Read on session open and periodically, because publication can follow reconnection.
      * Returns true when the detected
-     * mode differs from the one already advertised, so the caller can push the advert immediately.
+     * mode differs from the previous observation, so cached expressions can be reset.
      */
     private boolean refreshMode() {
         TrackingMode.Info detected = EnhanceDetector.detect();
@@ -316,9 +230,6 @@ public final class BridgeService extends Service {
             return true;
         }
         return false;
-    }
-    private void finishLedger(DeliveryLedger ledger,String reason){
-        if(ledger!=null)BridgeState.log("DELIVERY_END reason="+reason+" packets="+ledger.count()+" sha256="+ledger.finishHex()+" ringOverruns="+BridgeState.ringOverruns);
     }
     private void stopNow() {
         BridgeState.status = R.string.status_stopped; BridgeState.detail = R.string.detail_stopped; BridgeState.error = "";

@@ -7,6 +7,7 @@ import java.util.Locale;
 
 final class BridgePreferences {
     static final String EYE = "transmit_eye", FACE = "transmit_face", LANGUAGE = "language";
+    static final String HOST = "osc_host", PORT = "osc_port", HZ = "osc_hz";
     static SharedPreferences get(Context context) { return context.getSharedPreferences("bridge", Context.MODE_PRIVATE); }
     static int selection(SharedPreferences prefs) {
         return (prefs.getBoolean(EYE, true) ? 1 : 0) | (prefs.getBoolean(FACE, true) ? 2 : 0);

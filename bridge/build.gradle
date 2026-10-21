@@ -5,15 +5,20 @@ android {
     buildToolsVersion '35.0.0'
     ndkVersion '26.1.10909125'
     defaultConfig {
-        applicationId 'dev.pico.facialbridge'
+        applicationId 'dev.pico.facialbridge.osc'
         minSdk 29
         targetSdk 29
-        versionCode 7
-        versionName '0.5.0'
+        versionCode 8
+        versionName '0.6.0-osc.1'
         testInstrumentationRunner 'dev.pico.facialprobe.BridgeUiTest'
         ndk { abiFilters 'arm64-v8a' }
     }
-    sourceSets { main.java.srcDirs += '../shared/src/main/java' }
+    sourceSets {
+        main.java.srcDirs += '../shared/src/main/java'
+        // Retained only for probe/host regression tests; never shipped in the direct OSC app.
+        main.java.exclude '**/PeerProtocol.java', '**/FramePump.java', '**/DeliveryLedger.java',
+                '**/XDeliveryStats.java', '**/TrackingData.java'
+    }
     externalNativeBuild { cmake { path '../shared/src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
     lint {

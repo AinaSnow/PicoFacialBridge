@@ -46,3 +46,43 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## UnifiedPicoModule mapping adaptation (MIT)
+
+DirectFaceMapper.java adapts the declarative PICO mappings, expression-derived
+look directions, independent group retention and default EyeWide gain from:
+https://github.com/WolalaQAQ/UnifiedPicoModule/tree/486f176611e5f640b1317ea0b9730dc6ee72a5f7
+(Mapping/NeutralFaceMapper.cs, Mapping/EyeResolver.cs,
+Runtime/TrackingPipeline.cs, Configuration/PostProcessingSettings.cs, Core/Contracts.cs).
+The C# PC module itself is not bundled.
+
+MIT License
+
+Copyright (c) 2026 UnifiedPicoModule contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## Protocol interoperability references
+
+The independently implemented OSC packet encoder follows the VRChat public protocol:
+https://vrc-beta-docs.netlify.app/avatars/face-tracking/osc/
+
+VRCFaceTracking commit e1056bb98843dd0fd1b152f24cce3b09d0d19db4
+(UnifiedData.cs and BinaryFaceDataSender.cs, Apache-2.0) was inspected for
+wire order, truncation and interoperability. No VRCFT source or binaries are bundled.

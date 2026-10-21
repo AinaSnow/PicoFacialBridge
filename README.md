@@ -1,195 +1,99 @@
-# PicoFacialBridge
+# PicoFacialBridge OSC
 
-English | [简体中文](README_zh.md)
+[中文](README_zh.md) | Fork of [WolalaQAQ/PicoFacialBridge](https://github.com/WolalaQAQ/PicoFacialBridge)
 
-[![Android CI](https://github.com/WolalaQAQ/PicoFacialBridge/actions/workflows/android.yml/badge.svg)](https://github.com/WolalaQAQ/PicoFacialBridge/actions/workflows/android.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+Headset-only PICO 4 Pro eye/face conversion and direct OSC output to VRChat.
+Virtual Desktop remains the streaming software. No PC bridge, daemon, VRCFaceTracking,
+or UnifiedPicoModule installation is required.
 
-PicoFacialBridge is an Android app for the PICO 4 Pro that forwards the headset's eye and face tracking data over the local network to a PC, where [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) feeds it into VRCFaceTracking (VRCFT).
-
-The app does not require root, Magisk, Shizuku or PICO Connect, does not occupy an OpenXR session, and can run alongside streaming software such as Virtual Desktop. ADB is optional for installation and debugging and is not needed for daily use.
-
-**[Download APK](https://github.com/WolalaQAQ/PicoFacialBridge/releases) · [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) · [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) · [Report an issue](https://github.com/WolalaQAQ/PicoFacialBridge/issues)**
-
-> Version 0.5.0 uses the BridgeSplit protocol, so the PC must run [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule). The earlier PicoFacialDataModule and its forks cannot receive data from this version. If you still need the old protocol, use [v0.2.0](https://github.com/WolalaQAQ/PicoFacialBridge/releases/tag/v0.2.0).
-
-## Features
-
-- Start and stop tracking from inside the headset. A foreground service and persistent notification keep forwarding after the app window is closed.
-- Eye and face data are sent independently at their own source rates, with no smoothing or interpolation.
-- Eye and face transmission can be switched separately, and the interface shows the actual send rate of each channel.
-- Only the channels the PC has subscribed to are sent, and no tracking data is sent before the subscription is acknowledged.
-- The tracking mode (normal or enhanced) is detected automatically and shown in the app.
-- The interface is available in English and Chinese, and the language and transmission settings are saved.
-
-## Enhanced mode
-
-On a headset with the [PicoET-Enhance](https://github.com/WolalaQAQ/PicoET-Enhance) Magisk module active, the bridge detects enhanced mode on its own and forwards real pupil diameter and independent per-eye expressions to the PC; everything else in this README works the same without root or the module. See the PicoET-Enhance README for its features, installation and matching Bridge/UnifiedPicoModule requirements.
-
-## Compatibility
-
-| Item | Requirement |
-|---|---|
-| Headset | PICO 4 Pro with working eye and face tracking |
-| Verified firmware | PICO OS 5.13.7 (Android 10 / API 29, arm64-v8a) |
-| PC | Windows with VRCFaceTracking 5.4.5 and [UnifiedPicoModule](https://github.com/WolalaQAQ/UnifiedPicoModule) |
-| Network | PC and headset on the same trusted local network, with UDP port 9030 reachable |
-| VRChat | An avatar set up for face tracking, with OSC enabled |
-
-The app depends on PICO's internal tracking service and shared-memory layout, so system updates may affect it. Other models and firmware versions have not been confirmed compatible. The app cannot provide eye or face tracking on devices without the tracking hardware.
-
-As of 2026-10-02, the following have been verified on a PICO 4 Pro:
-
-- channel subscription and acknowledgement with UnifiedPicoModule;
-- all four combinations of the eye and face switches, with caches cleared on each change;
-- pausing capture when both switches are off;
-- return to neutral on the PC when data stops;
-- automatic recovery after an app restart: the headset interface returns to running in about 6 seconds, and the PC re-subscribes within about 33 seconds;
-- avatar expression tracking in enhanced mode;
-- running alongside Virtual Desktop.
-
-After a full headset reboot, starting the bridge and reconnecting the PC delivered eye and face data again. Not yet verified: long live-camera sessions and avatar behavior in normal mode.
-
-## Installation and use
-
-### 1. Install the headset app
-
-1. Download `PicoFacialBridge-v<version>-arm64-v8a-debug.apk` from [Releases](https://github.com/WolalaQAQ/PicoFacialBridge/releases). The source ZIP on the release page is not an installation package.
-2. Sideload it with your usual headset APK installer. Alternatively, enable developer mode and USB debugging on the headset, connect and authorize it, then install with [Android platform-tools](https://developer.android.com/tools/releases/platform-tools):
-
-   ```sh
-   adb install -r PicoFacialBridge-v0.5.0-arm64-v8a-debug.apk
-   ```
-
-3. Open PicoFacialBridge from the headset's 2D app list. Make sure eye and face tracking are enabled in the system settings, tap Start, and grant both tracking permissions the app requests.
-
-Released APKs use an automatically generated debug signature that may differ between builds, so Android may refuse an in-place update. In that case, verify the APK's source, uninstall the old version and install the new one. Uninstalling clears the app's settings.
-
-### 2. Install UnifiedPicoModule
-
-Install the module in VRCFT by following the [UnifiedPicoModule installation guide](https://github.com/WolalaQAQ/UnifiedPicoModule#installation). Disable other PICO modules first to avoid port conflicts.
-
-By default, the module discovers the headset automatically via multicast on the local network. If discovery fails, or if more than one headset is on the network, specify the headset address in the module's configuration file `UnifiedPicoModule.json`:
-
-```json
-"Bridge": { "IP": "192.168.1.123" }
+```
+PICO Binder / JNI shared memory → headset Unified Expressions mapping
+                              → OSC UDP → VRChat native Face Tracking
+Virtual Desktop               → streaming (unchanged)
 ```
 
-Replace the example with the headset IPv4 address shown in PicoFacialBridge, then restart VRCFT. The address may change after the headset reconnects to Wi-Fi. For the location of the configuration file and the other fields, see the UnifiedPicoModule [configuration reference](https://github.com/WolalaQAQ/UnifiedPicoModule/blob/main/docs/configuration.md).
+## Use
 
-### 3. Daily use
+1. Install the built `PicoFacialBridge-debug.apk` yourself using your usual trusted sideload method.
+   This fork has a separate application ID `dev.pico.facialbridge.osc` and label
+   **PicoFacialBridge OSC**. Stop the original bridge before running this version.
+2. Enable PICO eye and face tracking. Open the app and enter the **IPv4 address of the PC
+   running VRChat**, UDP port **9000** (or VRChat's configured OSC input port), and a
+   rate of **30–120 Hz** (default **60**). Start and grant both PICO tracking permissions.
+3. In a VRChat build supporting [OSC Face Tracking](https://vrc-beta-docs.netlify.app/avatars/face-tracking/osc/),
+   enable OSC and use an avatar configured for native Face Tracking with **Use All Tracking Keys**.
+   Legacy VRCFT avatar parameter setups alone are not sufficient for this protocol.
+4. Use Virtual Desktop normally. The app window can close while the foreground service runs.
+5. Stop via the app or notification when finished. Start/Restart applies saved IP/port/rate.
+   Eye and face switches apply immediately; both off pauses acquisition.
 
-1. Open PicoFacialBridge on the headset and tap Start.
-2. Start VRCFT on the PC. Once connected, PicoFacialBridge shows a connected client and non-zero send rates, and VRCFT's Output page shows `Bridge/BridgeSplit: state=Connected`.
-3. Start VRChat and enable OSC.
-4. When finished, tap Stop in the app or the persistent notification.
+The target IP means the VRChat PC, not an extra PC program. The app sends UDP directly:
+**packets sent does not confirm VRChat received them**. Check VRChat OSC settings, PC IP,
+network reachability and the avatar when the sender shows activity but the face does not move.
+Use a trusted LAN. The protocol is unencrypted and unauthenticated. The app does not open a
+UDP discovery listener or request multicast access. It does not alter PC network settings.
 
-The app does not start automatically at boot. After the headset restarts, open the app and start it again.
+## Mapping and timing
 
-## Interface
+- `/tracking/face/v1`, type tag `,b`, exactly 102 blob bytes in the official wire order.
+  Each datagram is **132 bytes** including OSC strings, big-endian length and padding.
+- Source slots are mapped by meaning, not by the PC module's enum order. Values are
+  clamped to 0..1 and truncated after multiplying by 255. NaN/Infinity become zero.
+- Gaze comes from the morphology direction differences; blink comes from morphology.
+  EyeWide is multiplied by 2 by default. No other corrective filters are enabled.
+- Enhanced EPI1 v2 left eye, right eye and mouth have independent clocks and cached valid
+  values. An update to one group retains the others. Each group returns to zero after
+  **2 seconds** without a valid sample. Mode/session/restart/selection changes reset caches.
+- Pupil dilation/constriction (indices 10..13) stay zero: source pupil millimeters have no
+  reliable normalization here. Unsupported expressions stay zero. No pupil support is claimed.
+- The worker reads the original bounded PICO rings once per send interval, coalesces all
+  retained observations, and sends the latest full snapshot. No outgoing frame queue or
+  catch-up bursts. Mapping and OSC buffers are reused; upstream ring-reader allocations remain.
+- The rate is a maximum target, not a real-time guarantee. Android scheduling and synchronous
+  Binder calls may reduce it. UDP errors back off to one send per second. Diagnostic state
+  logs are limited to once per five seconds except lifecycle/errors.
+- Permissions, foreground service, wake lock, enhance detection and dead/stale-session
+  reconnection remain. A final neutral packet on stop/restart is best effort over UDP.
 
-| Control or status | Description |
-|---|---|
-| Tracking mode | Normal or enhanced mode, as detected on the headset |
-| Start / Stop / Restart | Control the tracking service without ADB |
-| Send eye / Send face | Control transmission of each channel separately; changes take effect immediately and are saved |
-| Both off | Pauses tracking capture and data transmission while keeping discovery and control communication available |
-| Eye / Face Hz | Source frames successfully sent in the last second; not the capture rate or a display frame rate |
-| 0 Hz | No client, the channel is off, or there are no new samples; repeated samples and heartbeats are not counted |
-| Waiting for fresh tracking data | Put on and wake the headset, and check the system tracking settings and permissions |
-| English / 中文 | Switches the interface and notification language without affecting tracking |
+## Compatibility and validation
 
-PICO's eye and face tracking share one algorithm, so both permissions are required even when only one channel is transmitted. The transmission switches only control whether data is sent; they do not control camera power.
+The acquisition layer is inherited from upstream's PICO OS 5.13.7 / Android 10, arm64-v8a
+implementation, without an OpenXR session. **This fork has not been tested on a headset,
+with VD streaming, or against a running VRChat avatar yet.** Upstream hardware observations
+are not test results for this fork. Throughput, latency, battery impact and long-session
+reliability have not been measured on hardware.
 
-The channels actually sent are the intersection of the local transmission switches and the PC's subscription. When only eye data is transmitted, eye-region expressions such as blink, brows, EyeWide and EyeSquint are sent alongside the native eye data, and Face Hz shows 0. When only face data is transmitted, neither native eye data nor eye-region expressions are sent.
+Host tests cover all 52 source slots / 102 wire positions, gaze direction, independent
+clocks, stale/missing/invalid samples, switches/reset, non-finite values, clamp,
+OSC alignment/endianness and actual local UDP decoding. See [validation](docs/VALIDATION.md).
 
-## Troubleshooting
+## Build
 
-| Symptom | What to check |
-|---|---|
-| VRCFT cannot find the headset | Whether the PC and headset are on the same network, whether the router uses a guest network or client isolation, and whether the PC has VPN or virtual adapters. Try setting `Bridge.IP` in the module configuration |
-| Blocked by the firewall | Allow VRCFT to use UDP 9030 on private networks. Disabling the firewall entirely is not recommended |
-| Connected but always 0 Hz | Make sure the transmission switches are on, put on and wake the headset, and check the tracking permissions and system tracking settings |
-| An error or unsupported layout is shown | Open the diagnostic log and note the error, the headset model and the firmware version |
-| Tracking stops after sleep or a network change | Wake the headset, check its current IP, tap Restart and reconnect VRCFT |
-| Data arrives but the avatar does not move | Check VRCFT's output, VRChat OSC and the avatar parameters |
-| APK update fails | See the signing note above. Download the user APK, not the instrumentation test APK |
+Requires **JDK 17**, Gradle 8.9 (wrapper), Android SDK platform/build-tools 35,
+NDK 26.1.10909125 and CMake 3.22.1. Point `JAVA_HOME` and `ANDROID_HOME` to existing tools.
+Do not use JDK 25 with this Gradle version.
 
-When [opening an issue](https://github.com/WolalaQAQ/PicoFacialBridge/issues), please include the app version, headset model, PICO OS version, VRCFT and module versions, steps to reproduce, and log excerpts with personal information removed. Do not upload raw face tracking samples, device identifiers or signing keys.
-
-## Privacy and security
-
-The app forwards tracking data only to connected clients on the local network, does not store raw expression frames, and logs only negotiation state, rates and validity. The UDP protocol has no encryption or authentication. Use the app only on trusted networks and do not forward UDP port 9030 to the internet. The diagnostic tools may record biometric samples; review and remove sensitive content before sharing them.
-
-The app uses standard Android runtime permissions, and the system camera and sensor indicators remain in effect. It does not modify system partitions, does not relax SELinux, and does not bundle PICO's private libraries.
-
-## Development
-
-### Building from source
-
-Building requires JDK 17 and the Android SDK command-line tools (or Android Studio). Point `JAVA_HOME` and `ANDROID_HOME` at the corresponding installations and add `sdkmanager` to PATH, then accept the SDK licenses and install the pinned dependencies:
-
-```sh
-sdkmanager --licenses
-sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
-git clone https://github.com/WolalaQAQ/PicoFacialBridge.git
-cd PicoFacialBridge
-# Linux / macOS
-bash ./gradlew :bridge:assembleDebug
-# Windows PowerShell
-.\gradlew.bat :bridge:assembleDebug
-```
-
-The Gradle Wrapper uses Gradle 8.9 and the Android Gradle Plugin is 8.7.3. The first build requires network access. Only `:bridge` is needed for the user app; `:probe` is a developer diagnostic app. The output is `bridge/build/outputs/apk/debug/bridge-debug.apk`, signed with the local debug key and directly installable.
-
-### Host checks
-
-```sh
-bash tests/run-host-tests.sh
+```powershell
+# Pure Java conversion + local UDP test, works with the available JDK 25 too
+pwsh -File tests/run-direct-osc.ps1
 pwsh -File tests/check-translations.ps1
-# Requires a built debug APK; uses only the Python 3 standard library
-python3 tests/test_apk_distribution.py
+# Android toolchain required
+.\gradlew.bat --no-daemon :bridge:assembleDebug :bridge:lintDebug
+python tests/test_apk_distribution.py
 ```
 
-On Windows, `run-unit.ps1`, `run-protocol.ps1`, `run-cadence.ps1` and `run-forwarding.ps1` under `tests/` are also available. These scripts read the JDK directory from the local file `tools/jdk-path.txt`, which is not under version control and can be created with `Set-Content tools/jdk-path.txt $env:JAVA_HOME`. Device UI tests and real-headset acceptance are outside the scope of host CI.
+Linux/macOS/Git Bash: `bash tests/run-host-tests.sh` and
+`bash ./gradlew --no-daemon :bridge:assembleDebug :bridge:lintDebug`.
+The user APK is `bridge/build/outputs/apk/debug/bridge-debug.apk`; the androidTest APK is
+only an instrumentation runner, not the app to install. Debug signatures may change
+between CI builds; Android can require uninstall/reinstall and will clear preferences.
 
-### Project structure
+The fork CI builds and checks the APK, verifies its signature/alignment, and uploads a
+short-lived `android-build` artifact. It has no Release publishing job. Local tests
+need loopback UDP access but do not require a headset. Do not install or enable any
+headset debugging/security option merely to run host tests.
 
-```text
-PICO tracking service → Binder / read-only shared memory
-                      → Android foreground service → LAN UDP
-                      → UnifiedPicoModule → VRCFaceTracking → VRChat OSC
-```
-
-| Directory | Contents |
-|---|---|
-| `bridge/` | User app and UDP service |
-| `shared/` | JNI, data parsing and forwarding logic |
-| `probe/` | Developer diagnostic app |
-| `tests/` | Host, device and network checks |
-
-See the [changelog](CHANGELOG.md) for version history and the [release guide](docs/RELEASING.md) for the release process.
-
-### Protocol
-
-The app and UnifiedPicoModule communicate with the BridgeSplit protocol over UDP port 9030, with discovery via the multicast address 239.255.255.250. Eye data and face data are sent as separate datagrams at their own source rates, carrying only the subscribed channels.
-
-For the full description of packet formats, control messages and the connection flow, see the UnifiedPicoModule [protocol reference](https://github.com/WolalaQAQ/UnifiedPicoModule/blob/main/docs/protocol.md). When the protocol changes, this app and UnifiedPicoModule must be updated together.
-
-### Contributing
-
-Issues and pull requests are welcome. Changes should keep the protocol compatible and preserve each channel's original send cadence, and should update both READMEs and the interface translations. Do not commit keys, local SDK paths, raw biometric samples or personal research and test records.
-
-CI runs host tests, translation checks, Android lint and APK builds. When a GitHub Release is published, CI uploads the debug-signed user APK, checksums and license notices automatically, with no custom Secrets required.
-
-## Acknowledgements
-
-Thanks to [thoricelli](https://github.com/thoricelli) for the original [PicoFacialDataDaemon](https://github.com/thoricelli/PicoFacialDataDaemon) and [PicoFacialDataModule](https://github.com/thoricelli/PicoFacialDataModule).
-
-This project was developed with reference to the original projects' Binder calls, shared-memory data layouts and UDP protocol, which laid the foundation for accessing the headset's tracking service and for the original VRCFT integration. Building on that work, PicoFacialBridge implements the headset side as a rootless Android app with its own lifecycle management and forwarding, and now uses a different wire format from the original projects.
-
-This is an independent community project. It is not an official PICO product and is not an official release by the upstream author.
-
-## License
-
-Consistent with the original projects, this project is licensed under [MIT](LICENSE). The full license and the retained upstream copyright notice are in [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); both are included in the APK and the release assets.
+Legacy BridgeSplit utilities remain solely for probe and host regression tests and are
+excluded from the shipping bridge's Java sources. There is no legacy-mode switch.
+The Binder/JNI code is unchanged. License and mapping credits are included in each APK:
+[MIT](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md).

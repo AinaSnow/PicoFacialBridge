@@ -1,26 +1,17 @@
-name: Android CI and Release
+name: Android OSC CI
 
 on:
   push:
     branches: ['**']
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing tag to build and publish (e.g. v0.5.0); blank = CI only'
-        required: false
-        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-${{ inputs.tag || github.event.pull_request.number || github.ref_name }}
+  group: android-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  RELEASE_TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
 
 jobs:
   build:
@@ -30,8 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Manual publishing must build the requested tag, not the selected branch.
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          # Build exactly the commit that triggered this CI run.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -41,7 +32,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
-          # Publishing never writes to a shared build cache.
+          # Only the default branch may populate the shared build cache.
           cache-read-only: ${{ github.event_name != 'push' || github.ref_name != github.event.repository.default_branch }}
 
       - name: Install pinned Android toolchain
@@ -64,7 +55,7 @@ jobs:
           bash ./gradlew --no-daemon --stacktrace
           :bridge:assembleDebug :bridge:assembleDebugAndroidTest :bridge:lintDebug
 
-      - name: Check release contents and tag version
+      - name: Check APK contents, signature and alignment
         shell: bash
         run: |
           python3 tests/test_apk_distribution.py
@@ -77,12 +68,7 @@ jobs:
             bridge/build/outputs/apk/debug/bridge-debug.apk > build/apk-badging.txt
           version=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" build/apk-badging.txt)
           test -n "$version"
-          if [[ -n "$RELEASE_TAG" ]]; then
-            if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || [[ "${RELEASE_TAG#v}" != "$version" ]]; then
-              echo "::error::Release tag must be v$version (the APK versionName)"
-              exit 1
-            fi
-          fi
+
 
       - name: Collect CI artifacts
         shell: bash
@@ -91,6 +77,7 @@ jobs:
           cp bridge/build/outputs/apk/debug/bridge-debug.apk artifacts/ci/PicoFacialBridge-debug.apk
           cp bridge/build/outputs/apk/androidTest/debug/bridge-debug-androidTest.apk artifacts/ci/PicoFacialBridge-debug-androidTest.apk
           cp LICENSE THIRD_PARTY_NOTICES.md artifacts/ci/
+          cp build/apk-badging.txt artifacts/ci/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -107,73 +94,3 @@ jobs:
           path: bridge/build/reports/lint-results-debug.*
           if-no-files-found: ignore
           retention-days: 14
-
-  publish:
-    name: Publish GitHub Release
-    needs: build
-    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
-          persist-credentials: false
-          sparse-checkout: |
-            CHANGELOG.md
-            CHANGELOG_zh.md
-          sparse-checkout-cone-mode: false
-
-      # Keep the write token out of the build job; upload only its verified artifacts.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: android-build
-          path: artifacts/ci
-
-      - name: Create the release from the changelog, or refresh its assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          # Body of the "## [version]" section, up to the next version heading.
-          section() { awk -v h="## [$version]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' "$1"; }
-          {
-            echo "## What's new"
-            section CHANGELOG.md
-            echo
-            echo "## 更新内容"
-            section CHANGELOG_zh.md
-          } > release-notes.md
-          for file in CHANGELOG.md CHANGELOG_zh.md; do
-            if [[ -z "$(section "$file")" ]]; then
-              echo "::error::$file has no [$version] section"
-              exit 1
-            fi
-          done
-
-          mkdir -p artifacts/release
-          cp artifacts/ci/PicoFacialBridge-debug.apk \
-            "artifacts/release/PicoFacialBridge-${RELEASE_TAG}-arm64-v8a-debug.apk"
-          cp artifacts/ci/LICENSE artifacts/ci/THIRD_PARTY_NOTICES.md artifacts/release/
-          (cd artifacts/release && sha256sum ./*.apk LICENSE THIRD_PARTY_NOTICES.md > SHA256SUMS.txt)
-          assets=(artifacts/release/*.apk artifacts/release/SHA256SUMS.txt
-            artifacts/release/LICENSE artifacts/release/THIRD_PARTY_NOTICES.md)
-
-          if gh release view "$RELEASE_TAG" --json tagName > /dev/null 2>&1; then
-            # Rerun for an existing release: replace the assets, keep its notes.
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          else
-            options=()
-            if [[ "$RELEASE_TAG" == *-* ]]; then
-              options+=(--prerelease)
-            fi
-            # Publish only after the assets are attached.
-            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --draft \
-              --title "PicoFacialBridge $RELEASE_TAG" --notes-file release-notes.md "${options[@]}"
-            gh release edit "$RELEASE_TAG" --draft=false
-          fi
