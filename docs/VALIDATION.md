@@ -36,3 +36,8 @@ commit's Actions run for the exact outcome; the final delivery records the run U
 
 No hardware tests, APK installation, Unity project edits or performance measurements
 were performed by this development task. UDP send success is not receiver confirmation.
+
+## Diagnostics update (0.6.0-osc.2)
+
+BridgeDiagnosticsTest adds 136 counter, elapsed-time rate, throttle, privacy and recovery checks.
+No hardware acceptance or performance measurements were added.

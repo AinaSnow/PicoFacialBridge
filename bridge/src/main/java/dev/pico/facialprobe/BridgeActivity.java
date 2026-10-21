@@ -102,9 +102,11 @@ public final class BridgeActivity extends Activity {
             int port = Integer.parseInt(portInput.getText().toString());
             int hz = Integer.parseInt(hzInput.getText().toString());
             OscDestination.validate(host, port, hz);
+            BridgeState.log("CONFIG_SAVED target=" + host + ":" + port + " configuredMaxHz=" + hz + " apply=restart");
             prefs.edit().putString(BridgePreferences.HOST, host).putInt(BridgePreferences.PORT, port)
                     .putInt(BridgePreferences.HZ, hz).apply();
         } catch (IllegalArgumentException e) {
+            BridgeState.log("CONFIG_REJECTED invalid IPv4/port/rate");
             hostInput.setError(s(R.string.destination_invalid)); return;
         }
         // Applying a destination while running restarts the worker on the saved endpoint.
@@ -118,6 +120,7 @@ public final class BridgeActivity extends Activity {
         super.onRequestPermissionsResult(code, permissions, granted);
         if (code != 1 || granted.length != 2) return;
         for (int grant : granted) if (grant != PackageManager.PERMISSION_GRANTED) {
+            BridgeState.log("PERMISSION_DENIED eyeAndFaceRequired=true");
             BridgeState.status = R.string.status_error; BridgeState.detail = R.string.detail_permission; BridgeState.error = ""; render(); return;
         }
         send(pending);

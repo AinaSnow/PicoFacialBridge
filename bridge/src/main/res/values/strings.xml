@@ -15,7 +15,7 @@
     <string name="restart">Restart</string>
     <string name="show_logs">Show diagnostic logs</string>
     <string name="hide_logs">Hide diagnostic logs</string>
-    <string name="logs_hint">Diagnostic logs and system error details retain their original technical text.</string>
+    <string name="logs_hint">Tag: PicoFacialBridge. Summaries every 5 seconds; up to 160 recent lines. No expression values or automatic uploads. Logs may contain your PC IP.</string>
     <string name="usage_hint">Start the bridge, then use Virtual Desktop as usual. Enable OSC and native Face Tracking in VRChat. No PC module is needed. Pupil channels are unsupported. Use trusted Wi-Fi.</string>
     <string name="status_stopped">Stopped</string>
     <string name="status_starting">Starting</string>

@@ -97,3 +97,7 @@ Legacy BridgeSplit utilities remain solely for probe and host regression tests a
 excluded from the shipping bridge's Java sources. There is no legacy-mode switch.
 The Binder/JNI code is unchanged. License and mapping credits are included in each APK:
 [MIT](LICENSE), [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Diagnostics
+
+Version 0.6.0-osc.2 adds 5-second capture/validity/cache/conversion/UDP summaries and throttled state/error logs. View recent logs in the app or use logcat tag `PicoFacialBridge` (native details: `PicoBinderProbe`). No expression values, camera images, automatic upload or log files. See [field definitions and commands](docs/DIAGNOSTICS.md).

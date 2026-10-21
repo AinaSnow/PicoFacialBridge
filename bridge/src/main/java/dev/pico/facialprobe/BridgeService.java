@@ -56,6 +56,7 @@ public final class BridgeService extends Service {
     }
     @Override public int onStartCommand(Intent intent, int flags, int id) {
         String action = intent == null ? START : intent.getAction();
+        BridgeState.log("SERVICE_REQUEST action=" + action + " working=" + working + " sticky=" + (intent == null));
         startForeground(1, notification());
         if (STOP.equals(action)) {
             wanted = false; cancel.set(true);
@@ -86,7 +87,7 @@ public final class BridgeService extends Service {
             boolean failed = false;
             try { runBridge(); }
             catch (Exception | LinkageError e) {
-                if (!cancel.get()) { failed = true; BridgeState.status = R.string.status_error; BridgeState.detail = R.string.detail_error; BridgeState.error = e.toString(); BridgeState.log("ERROR " + e); }
+                if (!cancel.get()) { failed = true; BridgeState.status = R.string.status_error; BridgeState.detail = R.string.detail_error; BridgeState.error = e.toString(); BridgeState.log("FATAL workerStopped exception=" + e); }
             } finally {
                 boolean finalFailed = failed;
                 main.post(() -> {
@@ -111,7 +112,8 @@ public final class BridgeService extends Service {
         OscDestination.validate(host, port, hz);
         InetSocketAddress destination = new InetSocketAddress(InetAddress.getByAddress(OscDestination.address(host)), port);
         TrackingSession session = new TrackingSession(BridgeState::log);
-        DirectFaceMapper mapper = new DirectFaceMapper();
+        BridgeDiagnostics diagnostics = new BridgeDiagnostics(SystemClock.elapsedRealtimeNanos());
+        DirectFaceMapper mapper = new DirectFaceMapper(diagnostics);
         OscFacePacket osc = new OscFacePacket();
         DatagramPacket packet = new DatagramPacket(osc.bytes, osc.bytes.length, destination);
         DatagramSocket socket = new DatagramSocket();
@@ -124,8 +126,11 @@ public final class BridgeService extends Service {
             BridgeState.client = ""; BridgeState.clientMessage = R.string.client_none;
             BridgeState.udp = true;
             BridgeState.packets = BridgeState.eyeFrames = BridgeState.faceFrames = BridgeState.ringOverruns = 0;
-            BridgeState.log("BEGIN direct OSC target=" + BridgeState.address + " hz=" + hz + " no OpenXR session");
-            long nextStart = 0, nextLog = 0, nextModeCheck = 0, reportedOverruns = 0, nextSend = 0;
+            BridgeState.log("BEGIN version=" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName
+                    + " transport=OSC target=" + BridgeState.address + " configuredMaxHz=" + hz
+                    + " mask=" + transmitMask + " bytesPerMessage=" + OscFacePacket.SIZE
+                    + " pupil=unsupported gazeSource=morphology noOpenXR=true receiver=unconfirmed");
+            long nextStart = 0, nextModeCheck = 0, reportedOverruns = 0, nextSend = 0;
             long lastFresh = SystemClock.elapsedRealtime();
             int lastSelection = transmitMask;
             String startError = null, sendError = null;
@@ -133,29 +138,40 @@ public final class BridgeService extends Service {
                 long now = SystemClock.elapsedRealtime();
                 int selection = transmitMask;
                 if (selection != lastSelection) {
+                    BridgeState.log("CONFIG_APPLIED mask=" + selection + " previousMask=" + lastSelection + " cacheReset=true");
                     mapper.reset(); BridgeState.rates.reset(); nextSend = 0;
                     lastSelection = selection; lastFresh = now; nextStart = 0;
                     // Explicitly clear disabled channels (including both-off) on the receiver.
                     osc.neutral();
-                    try { socket.send(packet); BridgeState.packets++; sendError = null; }
-                    catch (java.io.IOException e) { sendError = e.toString(); }
+                    try { socket.send(packet); diagnostics.sent(true); BridgeState.packets++; sendError = null; }
+                    catch (java.io.IOException e) { sendError = e.toString(); BridgeState.log(diagnostics.error(BridgeDiagnostics.UDP,e,SystemClock.elapsedRealtimeNanos())); }
                 }
                 if (now >= nextModeCheck) {
                     if (refreshMode()) { mapper.reset(); BridgeState.rates.reset(); lastFresh = now; }
                     nextModeCheck = now + 1000;
                 }
-                if (selection == 0 && active) { session.close(); active = false; mapper.reset(); }
+                if (selection == 0 && active) {
+                    BridgeState.log("CAPTURE_PAUSED reason=allChannelsDisabled");
+                    session.close(); active = false; mapper.reset();
+                }
                 if (StreamHealth.reconnectDue(active, session.isAlive(), now, lastFresh)) {
-                    BridgeState.log("RECONNECT stale or dead tracking session");
+                    diagnostics.reconnect();
+                    BridgeState.log("RECONNECT binderAlive=" + session.isAlive() + " requiredFreshAgeMs=" + (now-lastFresh));
                     session.close(); active = false; mapper.reset(); nextStart = now + 1000;
                 }
                 if (selection != 0 && !active && now >= nextStart) {
                     try {
-                        session.open(); active = true; startError = null; lastFresh = SystemClock.elapsedRealtime();
+                        session.open(); active = true;
+                        BridgeState.log("SESSION_OPEN_OK recovered=" + (startError != null));
+                        startError = null; lastFresh = SystemClock.elapsedRealtime();
                         mapper.reset(); reportedOverruns = 0; BridgeState.rates.reset();
-                    } catch (UnsupportedOperationException e) { throw e; }
+                    } catch (UnsupportedOperationException e) {
+                        BridgeState.log(diagnostics.error(BridgeDiagnostics.OPEN,e,SystemClock.elapsedRealtimeNanos()));
+                        throw e;
+                    }
                     catch (Exception e) {
-                        session.close(); startError = e.toString(); BridgeState.log("RETRY " + e);
+                        session.close(); startError = e.toString();
+                        BridgeState.log(diagnostics.error(BridgeDiagnostics.OPEN,e,SystemClock.elapsedRealtimeNanos()));
                         nextStart = SystemClock.elapsedRealtime() + 5000;
                     }
                 }
@@ -163,12 +179,21 @@ public final class BridgeService extends Service {
                 if (active) {
                     // Keep the existing bounded ring reader and Binder/JNI acquisition path.
                     // Native eye packets provide no normalized pupil or extra avatar channels.
-                    List<byte[]> eyes = session.readEyes(), faces = session.readFaces();
-                    BridgeState.eyeFrames += eyes.size(); BridgeState.faceFrames += faces.size();
-                    for (byte[] face : faces) mapper.accept(face, nano);
-                    if (session.overruns() > reportedOverruns) {
-                        BridgeState.ringOverruns += session.overruns() - reportedOverruns;
-                        reportedOverruns = session.overruns();
+                    List<byte[]> eyes = null, faces = null;
+                    try { eyes = session.readEyes(); faces = session.readFaces(); }
+                    catch (RuntimeException e) {
+                        BridgeState.log(diagnostics.error(BridgeDiagnostics.READ,e,SystemClock.elapsedRealtimeNanos()));
+                        startError=e.toString(); session.close(); active=false; mapper.reset();
+                        nextStart=SystemClock.elapsedRealtime()+5000;
+                    }
+                    if (active) {
+                        diagnostics.captured(eyes.size(),faces.size(),nano);
+                        BridgeState.eyeFrames += eyes.size(); BridgeState.faceFrames += faces.size();
+                        for (byte[] face : faces) mapper.accept(face, nano);
+                        if (session.overruns() > reportedOverruns) {
+                            BridgeState.ringOverruns += session.overruns() - reportedOverruns;
+                            reportedOverruns = session.overruns();
+                        }
                     }
                 }
                 BridgeState.eye = active && mapper.eyeFresh(nano);
@@ -179,12 +204,12 @@ public final class BridgeService extends Service {
                     synchronized (transmissionLock) {
                         if (selection == transmitMask && !cancel.get()) {
                             try {
-                                socket.send(packet); BridgeState.packets++; sendError = null;
+                                socket.send(packet); diagnostics.sent(false); BridgeState.packets++; sendError = null;
                                 BridgeState.rates.sent(nano, (selection & 1) != 0 ? mapper.eyeTime() : 0,
                                         (selection & 2) != 0 ? mapper.mouthTime() : 0);
                             } catch (java.io.IOException e) {
                                 String error = e.toString();
-                                if (!error.equals(sendError)) BridgeState.log("UDP_SEND_ERROR " + error);
+                                BridgeState.log(diagnostics.error(BridgeDiagnostics.UDP,e,SystemClock.elapsedRealtimeNanos()));
                                 sendError = error;
                             }
                         }
@@ -198,10 +223,11 @@ public final class BridgeService extends Service {
                         : live ? R.string.status_running : R.string.status_starting;
                 BridgeState.detail = selection == 0 ? R.string.detail_paused : sendError != null ? R.string.detail_send_error
                         : startError != null ? R.string.detail_retry : live ? R.string.detail_live : R.string.detail_waiting;
-                if (now >= nextLog) {
-                    BridgeState.log("STATE eye=" + BridgeState.eye + " face=" + BridgeState.face + " packets=" + BridgeState.packets
-                            + " mask=" + selection + " ringOverruns=" + BridgeState.ringOverruns);
-                    nextLog = now + 5000;
+                long diagnosticNow=SystemClock.elapsedRealtimeNanos();
+                BridgeState.log(diagnostics.health(diagnosticNow,mapper,selection,active,sendError!=null));
+                if (diagnostics.due(diagnosticNow)) {
+                    BridgeState.log(diagnostics.summary(diagnosticNow,mapper,selection,BridgeState.address,hz,
+                            BridgeState.mode.enhance,BridgeState.ringOverruns));
                 }
                 // One acquisition pass per bounded send interval; no 1 ms socket polling.
                 SystemClock.sleep(selection == 0 ? 100 : Math.max(1, (interval + 999_999L) / 1_000_000L));
@@ -209,7 +235,10 @@ public final class BridgeService extends Service {
         } finally {
             // Best-effort neutral on explicit stop/restart, not an acknowledgment guarantee.
             osc.neutral();
-            try { socket.send(packet); } catch (java.io.IOException e) { BridgeState.log("NEUTRAL_SEND_FAILED " + e); }
+            try { socket.send(packet); diagnostics.sent(true); BridgeState.packets++; }
+            catch (java.io.IOException e) { BridgeState.log(diagnostics.error(BridgeDiagnostics.UDP,e,SystemClock.elapsedRealtimeNanos())); }
+            BridgeState.log("FINAL " + diagnostics.summary(SystemClock.elapsedRealtimeNanos(),mapper,transmitMask,BridgeState.address,hz,
+                    BridgeState.mode.enhance,BridgeState.ringOverruns));
             session.close(); socket.close();
             if (wake != null && wake.isHeld()) wake.release();
             BridgeState.eye = BridgeState.face = BridgeState.udp = false;
@@ -226,7 +255,7 @@ public final class BridgeService extends Service {
         TrackingMode.Info detected = EnhanceDetector.detect();
         if (!detected.sameAs(BridgeState.mode)) {
             BridgeState.mode = detected;
-            BridgeState.log("MODE " + TrackingMode.advertise(detected) + " keepPerEyeGaze=" + detected.keepPerEyeGaze());
+            BridgeState.log("MODE " + TrackingMode.advertise(detected) + " gazeSource=morphology pupil=unsupported cacheReset=true");
             return true;
         }
         return false;
@@ -237,6 +266,7 @@ public final class BridgeService extends Service {
     }
     @Override public IBinder onBind(Intent intent) { return null; }
     @Override public void onDestroy() {
+        BridgeState.log("SERVICE_DESTROY cancelWorker=true");
         destroyed = true; wanted = false; cancel.set(true); prefs.unregisterOnSharedPreferenceChangeListener(settingsChanged); super.onDestroy();
     }
 }

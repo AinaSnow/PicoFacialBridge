@@ -27,8 +27,13 @@ final class DirectFaceMapper {
     private final long[] seen = new long[3], validAt = new long[3];
     private float rightInner;
     private int version = -1;
+    private final BridgeDiagnostics diagnostics;
+
+    DirectFaceMapper() { this(null); }
+    DirectFaceMapper(BridgeDiagnostics diagnostics) { this.diagnostics = diagnostics; }
 
     void reset() {
+        if (diagnostics != null) diagnostics.reset();
         Arrays.fill(raw, 0); Arrays.fill(values, 0);
         Arrays.fill(seen, 0); Arrays.fill(validAt, 0);
         rightInner = 0; version = -1;
@@ -36,27 +41,31 @@ final class DirectFaceMapper {
 
     /** Missing/short frames do not overwrite other groups. Timestamp unit is PICO monotonic ns. */
     void accept(byte[] face, long now) {
-        if (face == null || face.length < 384) return;
+        if (face == null || face.length < 384) { if (diagnostics != null) diagnostics.malformed(); return; }
         int v = i32(face, 228) == 0x31495045 ? i32(face, 232) : 0;
         if (v != 1 && v != 2) v = 0;
         if (version != v) { reset(); version = v; }
         int updates = v == 2 ? i32(face, 236) : 7;
         for (int group = 0; group < 3; group++) {
             long time = i64(face, v == 2 ? (group == 1 ? 248 : group == 2 ? 240 : 0) : 0);
-            if ((updates & (1 << group)) == 0 || time <= seen[group] || !fresh(now, time)) continue;
+            if ((updates & (1 << group)) == 0) continue;
+            if (time <= seen[group]) { if (diagnostics != null) diagnostics.duplicate(); continue; }
+            if (!fresh(now, time)) { if (diagnostics != null) diagnostics.clockRejected(); continue; }
             seen[group] = time;
             boolean usable = group == 2 ? f32(face, 300) == 1f
                     : v == 0 ? f32(face, 296) == 1f : i32(face, group == 0 ? 220 : 224) != 0;
-            if (!usable) continue; // Retain last valid observation until its own expiry.
+            if (!usable) { if (diagnostics != null) diagnostics.invalid(group); continue; }
             int[] slots = group == 0 ? LEFT : group == 1 ? RIGHT : MOUTH;
-            for (int slot : slots) raw[slot] = finite(f32(face, 8 + slot * 4));
-            if (group == 1) rightInner = finite(f32(face, v == 0 ? 20 : 216));
+            for (int slot : slots) raw[slot] = sourceValue(f32(face, 8 + slot * 4));
+            if (group == 1) rightInner = sourceValue(f32(face, v == 0 ? 20 : 216));
             validAt[group] = time;
+            if (diagnostics != null) diagnostics.valid(group);
         }
     }
 
     /** Full snapshot; unsupported keys (including pupil 10..13) remain zero. */
     float[] snapshot(long now, int mask) {
+        if (diagnostics != null) diagnostics.snapshot();
         for (int group = 0; group < 3; group++) {
             if (!fresh(now, validAt[group]) || (mask & (group == 2 ? 2 : 1)) == 0) {
                 int[] slots = group == 0 ? LEFT : group == 1 ? RIGHT : MOUTH;
@@ -82,6 +91,12 @@ final class DirectFaceMapper {
     boolean mouthFresh(long now) { return fresh(now, validAt[2]); }
     long eyeTime() { return Math.max(validAt[0], validAt[1]); }
     long mouthTime() { return validAt[2]; }
+    long validTime(int group) { return validAt[group]; }
+    boolean groupFresh(int group, long now) { return fresh(now, validAt[group]); }
+    long validAgeMs(int group, long now) { return validAt[group] == 0 ? -1 : Math.max(0,(now-validAt[group])/1_000_000L); }
+    String sourceName() { return version < 0 ? "none" : version == 0 ? "normal-morphology" : version == 1 ? "EPI1-v1" : "EPI1-v2"; }
+    int sourceVersion() { return version; }
+    private float sourceValue(float v) { if (diagnostics != null) diagnostics.value(v); return finite(v); }
     private void split(float difference, int positive, int negative) {
         values[positive] = clamp(difference); values[negative] = clamp(-difference);
     }

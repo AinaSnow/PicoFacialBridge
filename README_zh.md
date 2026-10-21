@@ -56,3 +56,7 @@ CI 也会验证签名、对齐与内容并保存 `android-build` 构建附件；
 
 详见 [验证记录与待实测项目](docs/VALIDATION.md)、[MIT 许可](LICENSE) 和 [版权归属](THIRD_PARTY_NOTICES.md)。
 旧 BridgeSplit 代码仅用于 probe／host 回归，已排除在本版本 APK 的 Java 源集之外，没有旧模式切换。
+
+## 诊断日志
+
+0.6.0-osc.2 新增每 5 秒的采集／有效性／缓存／转换／UDP 汇总及限频状态、异常日志。可在应用内查看，或过滤 logcat 标签 `PicoFacialBridge`（底层细节：`PicoBinderProbe`）。不记录表情数值、不采集图像、不自动上传、不写无限增长日志文件。详见 [日志定位与字段定义](docs/DIAGNOSTICS.md)。

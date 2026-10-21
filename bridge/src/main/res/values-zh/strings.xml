@@ -15,7 +15,7 @@
     <string name="restart">重启</string>
     <string name="show_logs">显示诊断日志</string>
     <string name="hide_logs">隐藏诊断日志</string>
-    <string name="logs_hint">诊断日志和系统错误详情保留原始技术文本。</string>
+    <string name="logs_hint">日志标签：PicoFacialBridge。每 5 秒汇总，保留最近 160 行。不记录表情数值，不自动上传。日志可能包含电脑 IP。</string>
     <string name="usage_hint">启动后照常使用 Virtual Desktop。在 VRChat 启用 OSC 与原生面部追踪，不需要 PC 模块。不支持瞳孔通道。请使用可信 Wi-Fi。</string>
     <string name="status_stopped">已停止</string>
     <string name="status_starting">启动中</string>
